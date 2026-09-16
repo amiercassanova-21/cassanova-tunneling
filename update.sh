@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.6.4
+#  CASSANOVA TUNNELING - UPDATE v1.7.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -635,6 +635,12 @@ set_bantime(){
 if [[ "$1" == "info" ]]; then
   dashboard; accounts; version_box
   echo -e "\n          ${G}to access use ${C}menu${G} command${N}\n"
+  LT=$(cat $ASD/latest 2>/dev/null)
+  if [[ -n "$LT" && "$LT" != "$VER" ]]; then
+    echo -e " ${Y}Update tersedia: $VER → $LT${N} (menu → 6 → 12)\n"
+  else
+    echo -e " ${G}Up to date${N}\n"
+  fi
   exit 0
 fi
 
@@ -827,7 +833,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.6.4" > /etc/autoscript/version
+echo "v1.7.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----

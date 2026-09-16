@@ -9,6 +9,57 @@ ASD=/etc/autoscript
 apt install -y speedtest-cli zip unzip >/dev/null 2>&1
 
 # =====================================================
+#  UPDATE SCRIPT
+# =====================================================
+cat > /usr/local/sbin/cas-update <<'EOF'
+#!/bin/bash
+REPO=REPO_HERE
+ASD=/etc/autoscript
+G='\e[32m'; R='\e[31m'; Y='\e[33m'; C='\e[36m'; N='\e[0m'
+cur=$(cat $ASD/version 2>/dev/null)
+latest=$(curl -s --max-time 10 "$REPO/version?t=$(date +%s)" | tr -d '[:space:]')
+
+# mode cek diam-diam (cron): simpan status saja
+if [[ "$1" == "--check" ]]; then
+  [[ -n "$latest" ]] && echo "$latest" > $ASD/latest
+  exit 0
+fi
+
+clear
+echo -e "${C}════════════════════════════════════${N}"
+echo -e "          ${G}UPDATE SCRIPT${N}"
+echo -e "${C}════════════════════════════════════${N}"
+echo -e " Versi terpasang : ${Y}$cur${N}"
+if [[ -z "$latest" ]]; then
+  echo -e " Versi terbaru   : ${R}gagal dicek (cek koneksi/GitHub)${N}"
+  echo; read -rp "Tetap update paksa? (y/t) : " y; [[ "$y" != y ]] && exit 0
+else
+  echo "$latest" > $ASD/latest
+  echo -e " Versi terbaru   : ${G}$latest${N}"
+  if [[ "$cur" == "$latest" && "$1" != "--force" ]]; then
+    echo -e "\n ${G}Script sudah versi terbaru.${N}"
+    echo; read -rp "Install ulang versi ini? (y/t) : " y; [[ "$y" != y ]] && exit 0
+  else
+    echo; read -rp "Update ke $latest sekarang? (y/t) : " y; [[ "$y" != y ]] && exit 0
+  fi
+fi
+echo -e "\n${Y}Mengunduh update...${N}"
+if wget -qO /root/update.sh "$REPO/update.sh?t=$(date +%s)" && [[ -s /root/update.sh ]]; then
+  bash /root/update.sh
+  cat $ASD/version > $ASD/latest 2>/dev/null
+  echo; read -rp "Tekan Enter untuk kembali ke menu"
+else
+  echo -e "${R}Gagal mengunduh update.sh${N}"; sleep 3
+fi
+EOF
+sed -i "s#REPO_HERE#https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main#" /usr/local/sbin/cas-update
+chmod +x /usr/local/sbin/cas-update
+# cek versi terbaru tiap 6 jam (tidak memperlambat menu)
+echo "17 */6 * * * root /usr/local/sbin/cas-update --check" > /etc/cron.d/cas-update
+chmod 644 /etc/cron.d/cas-update
+/usr/local/sbin/cas-update --check
+
+# =====================================================
 #  MENU FEATURES
 # =====================================================
 cat > /usr/local/sbin/m-feature <<'EOF'
@@ -155,10 +206,11 @@ while true; do
   echo -e " ${C}9.)${N}  Security SYN & Optimasi"
   echo -e " ${C}10.)${N} Change Domain VPS"
   echo -e " ${C}11.)${N} Information System"
-  echo -e " ${C}12.)${N} Back to Menu"
+  echo -e " ${C}12.)${N} Update Script"
+  echo -e " ${C}13.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
-  read -rp "$(echo -e "${G}Select From Options [1-12 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-13 or x] : ${N}")" opt
   case $opt in
     1) check_bandwidth ;;
     2) set_reboot ;;
@@ -171,7 +223,8 @@ while true; do
     9) security_syn ;;
     10) change_domain ;;
     11) info_system ;;
-    12) exit 0 ;;
+    12) cas-update; exit 0 ;;
+    13) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
