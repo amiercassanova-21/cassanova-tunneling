@@ -6,7 +6,7 @@ GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 export DEBIAN_FRONTEND=noninteractive
 ASD=/etc/autoscript
-apt install -y speedtest-cli >/dev/null 2>&1
+apt install -y speedtest-cli zip unzip >/dev/null 2>&1
 
 # =====================================================
 #  MENU FEATURES
@@ -47,22 +47,29 @@ speed_vps(){ header "SPEEDTEST VPS"; command -v speedtest-cli >/dev/null && spee
 
 backup_vps(){
   header "BACKUP CONFIGURATION"
-  local f=/root/backup-cassanova-$(date +%F).tar.gz
-  tar -czf "$f" -C / etc/autoscript usr/local/etc/xray/config.json etc/passwd etc/shadow etc/nginx/conf.d/xray.conf 2>/dev/null
-  echo -e " ${G}Backup dibuat:${N} $f"
-  echo -e " Simpan file ini. Untuk restore: menu Features -> Restore"
-  [[ -f $ASD/bot ]] && { source $ASD/bot; [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]] && curl -s -F chat_id="$CHAT_ID" -F document=@"$f" "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" >/dev/null && echo -e " ${G}Backup juga dikirim ke Telegram${N}"; }
+  local f
+  if [[ -x /usr/local/sbin/cas-backup-make ]]; then f=$(/usr/local/sbin/cas-backup-make)
+  else mkdir -p /root/backup; f=/root/backup/${DOMAIN}-$(date +%H_%M_%S).zip; cd / && zip -rq "$f" etc/autoscript usr/local/etc/xray/config.json etc/passwd etc/shadow etc/group etc/gshadow etc/nginx/conf.d/xray.conf 2>/dev/null; fi
+  echo -e " ${G}File backup:${N} $f"
+  if [[ -f $ASD/bot ]]; then
+    . $ASD/bot
+    [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]] && curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" -F parse_mode=HTML -F caption="$(/usr/local/sbin/cas-backup-caption 2>/dev/null)" "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" && echo -e " ${G}Juga dikirim ke Telegram${N}"
+  fi
   pause
 }
 
 restore_vps(){
   header "RESTORE CONFIGURATION"
-  ls -1 /root/backup-cassanova-*.tar.gz 2>/dev/null || { echo -e "${Y}Tidak ada file backup di /root${N}"; pause; return; }
-  echo; read -rp "Nama file backup (path lengkap) : " f
-  [[ ! -f "$f" ]] && { msg "${R}File tidak ada${N}"; return; }
-  read -rp "Restore akan menimpa config sekarang. Lanjut? (y/t) : " y
+  local list=() f i=0 n
+  while IFS= read -r f; do list+=("$f"); done < <(ls -1t /root/backup/*.zip /root/*.zip 2>/dev/null)
+  [[ ${#list[@]} == 0 ]] && { echo -e " ${Y}Tidak ada file .zip di /root/backup atau /root${N}"; echo -e " Upload file backup dari Telegram ke /root dulu."; pause; return; }
+  for f in "${list[@]}"; do i=$((i+1)); printf " ${C}%-3s${N} %s\n" "$i." "$(basename "$f")"; done
+  echo; read -rp "Nomor file : " n
+  [[ "$n" =~ ^[0-9]+$ ]] && (( n>=1 && n<=${#list[@]} )) || { msg "${R}Nomor salah${N}"; return; }
+  f=${list[$((n-1))]}
+  read -rp "Restore $(basename "$f")? Config sekarang akan ditimpa (y/t) : " y
   [[ "$y" != y ]] && return
-  tar -xzf "$f" -C / && systemctl restart xray nginx dropbear 2>/dev/null
+  unzip -oq "$f" -d / && systemctl restart xray nginx dropbear 2>/dev/null
   msg "${G}Restore selesai${N}"
 }
 

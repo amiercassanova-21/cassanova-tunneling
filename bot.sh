@@ -6,6 +6,7 @@ GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 ASD=/etc/autoscript
 touch $ASD/bot
+apt install -y zip unzip >/dev/null 2>&1
 
 # helper notifikasi dipakai script lain (mis. saat create/expire)
 cat > /usr/local/lib/autoscript/notify.sh <<'EOF'
@@ -133,11 +134,10 @@ toggle_notify(){
 backup_now(){
   load; [[ -z "$BOT_TOKEN" ]] && { msg "${R}Buat bot dulu (menu 1)${N}"; return; }
   header "BACKUP VPS -> TELEGRAM"
-  local f=/root/backup-cassanova-$(date +%F_%H%M).tar.gz
-  tar -czf "$f" -C / etc/autoscript usr/local/etc/xray/config.json etc/passwd etc/shadow etc/nginx/conf.d/xray.conf 2>/dev/null
-  echo -e " Mengirim $f ..."
-  if curl -s --max-time 60 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
-      -F caption="📦 Backup $BRAND $(date '+%F %H:%M')" \
+  local f; f=$(/usr/local/sbin/cas-backup-make)
+  echo -e " Mengirim $(basename "$f") ..."
+  if curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
+      -F parse_mode=HTML -F caption="$(/usr/local/sbin/cas-backup-caption)" \
       "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"; then
     msg "${G}Backup terkirim ke Telegram${N}"
   else
@@ -215,9 +215,58 @@ EOF
 chmod +x /usr/local/sbin/m-bot
 
 # backup otomatis harian ke Telegram (03:00) bila notifikasi on
-grep -q "cas-backup" /etc/cron.d/autoscript 2>/dev/null || cat > /etc/cron.d/cas-backup <<'CRON'
-0 3 * * * root . /etc/autoscript/bot 2>/dev/null; [ "$NOTIFY" = on ] && f=/root/backup-cassanova-auto.tar.gz && tar -czf "$f" -C / etc/autoscript usr/local/etc/xray/config.json etc/passwd etc/shadow etc/nginx/conf.d/xray.conf 2>/dev/null && curl -s --max-time 60 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" -F caption="Backup harian" "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
-CRON
+# pembuat file backup: <domain>-<ip>-<jam_menit_detik>.zip
+cat > /usr/local/sbin/cas-backup-make <<'EOF'
+#!/bin/bash
+D=$(cat /etc/autoscript/domain)
+IP=$(jq -r '.ip // empty' /etc/autoscript/ipinfo.json 2>/dev/null); [[ -z "$IP" ]] && IP=$(curl -s --max-time 5 ifconfig.me)
+mkdir -p /root/backup
+find /root/backup -name '*.zip' -mtime +3 -delete 2>/dev/null
+f=/root/backup/${D}-${IP}-$(date +%H_%M_%S).zip
+cd / && zip -rq "$f" FILES_HERE 2>/dev/null
+echo "$f"
+EOF
+chmod +x /usr/local/sbin/cas-backup-make
+sed -i "s#FILES_HERE#etc/autoscript usr/local/etc/xray/config.json etc/passwd etc/shadow etc/group etc/gshadow etc/nginx/conf.d/xray.conf#" /usr/local/sbin/cas-backup-make
+
+# keterangan file backup (HTML)
+cat > /usr/local/sbin/cas-backup-caption <<'EOF'
+#!/bin/bash
+I=/etc/autoscript/ipinfo.json
+B=$(cat /etc/autoscript/brand); D=$(cat /etc/autoscript/domain)
+IP=$(jq -r '.ip // "-"' $I 2>/dev/null)
+ISP=$(jq -r '.org // "-"' $I 2>/dev/null | sed 's/^AS[0-9]* //')
+CITY=$(jq -r '.city // "-"' $I 2>/dev/null)
+L="━━━━━━━━━━━━━━━━━━━━"
+cat <<TXT
+✨ <b>Backup VPS Created successfully</b> ✨
+📦 <b>$B</b>
+$L
+<code>Domain :</code> $D
+<code>IP     :</code> $IP
+<code>ISP    :</code> $ISP
+<code>City   :</code> $CITY
+<code>Date   :</code> $(date +%F)
+<code>Time   :</code> $(date +%H:%M:%S)
+$L
+<code>Restore :</code> menu → 6 FEATURES → 7 Restore
+Upload file .zip ini ke folder /root VPS
+TXT
+EOF
+chmod +x /usr/local/sbin/cas-backup-caption
+
+cat > /usr/local/sbin/cas-autobackup <<'EOF'
+#!/bin/bash
+BOT_TOKEN=""; CHAT_ID=""; NOTIFY="off"
+. /etc/autoscript/bot 2>/dev/null
+[[ "$NOTIFY" != on || -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && exit 0
+f=$(/usr/local/sbin/cas-backup-make)
+curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
+  -F parse_mode=HTML -F caption="$(/usr/local/sbin/cas-backup-caption)" \
+  "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
+EOF
+chmod +x /usr/local/sbin/cas-autobackup
+echo "0 3 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup
 chmod 644 /etc/cron.d/cas-backup 2>/dev/null
 
 echo -e "${GRN}Modul Setup Bot selesai.${NC}"

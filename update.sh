@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.6.1
+#  CASSANOVA TUNNELING - UPDATE v1.6.4
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -788,6 +788,19 @@ else
   cp -f /root/xray.conf.bak /etc/nginx/conf.d/xray.conf && systemctl restart nginx
 fi
 
+# IP asli pelanggan saat lewat Cloudflare (tanpa ini yang tercatat IP server Cloudflare)
+CFR=/etc/nginx/conf.d/00-cloudflare-realip.conf
+{
+  echo "# Cloudflare real IP - dibuat otomatis"
+  V4=$(curl -s --max-time 10 https://www.cloudflare.com/ips-v4 | grep -E '^[0-9./]+$')
+  V6=$(curl -s --max-time 10 https://www.cloudflare.com/ips-v6 | grep -E '^[0-9a-f:./]+$')
+  [[ -z "$V4" ]] && V4="173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22"
+  [[ -z "$V6" ]] && V6="2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32"
+  for r in $V4 $V6; do echo "set_real_ip_from $r;"; done
+  echo "real_ip_header CF-Connecting-IP;"
+} > $CFR
+if nginx -t >/dev/null 2>&1; then systemctl reload nginx; else rm -f $CFR; fi
+
 # perpanjangan SSL otomatis lewat webroot (nginx tidak perlu dimatikan)
 ACF=/root/.acme.sh/${DOMAIN}_ecc/${DOMAIN}.conf
 [[ -f $ACF ]] && sed -i "s#^Le_Webroot=.*#Le_Webroot='/var/www/html'#" $ACF
@@ -814,7 +827,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.6.1" > /etc/autoscript/version
+echo "v1.6.4" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----
