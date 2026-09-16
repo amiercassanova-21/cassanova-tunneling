@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.4.1
+#  CASSANOVA TUNNELING - UPDATE v1.4.2
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -276,27 +276,37 @@ show_account(){ # user id exp
   echo -e "$L2"
 }
 
-list_users(){
-  header "LIST $UP USERS"
+list_users(){ # $1 = all | active | inactive
+  local f=${1:-all} title="LIST $UP USERS"
+  [[ $f == active ]] && title="$UP USER AKTIF"
+  [[ $f == inactive ]] && title="$UP USER TERKUNCI"
+  header "$title"
   printf " ${G}%-3s %-12s %-10s %-3s %-12s %s${N}\n" "NO" "USER" "EXPIRED" "IP" "USED/QUOTA" "ST"
   local i=0 u exp id ipl q st qd
   while read -r u exp id ipl q st; do
-    [[ -z "$u" ]] && continue; i=$((i+1))
+    [[ -z "$u" ]] && continue
+    [[ $f == active && "$st" != active ]] && continue
+    [[ $f == inactive && "$st" == active ]] && continue
+    i=$((i+1))
     [[ "$q" == 0 ]] && qd="$(hbytes $(usage_get $PROTO "$u"))/~" || qd="$(hbytes $(usage_get $PROTO "$u"))/${q}G"
     printf " %-3s %-12s %-10s %-3s %-12s %b\n" "$i" "$u" "$exp" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")" "$qd" "$(st_label "$st")"
   done < "$DB"
-  [[ $i == 0 ]] && echo -e " ${Y}Belum ada akun${N}"
+  LISTED=$i
+  if [[ $i == 0 ]]; then
+    case $f in active) echo -e " ${Y}Tidak ada user aktif${N}";; inactive) echo -e " ${Y}Tidak ada user yang terkunci${N}";; *) echo -e " ${Y}Belum ada akun${N}";; esac
+  fi
   echo -e "$LINE"
   echo -e " ${G}Total : ${Y}$i${G} akun${N}"
   echo -e "$LINE"
 }
 
-pick_user(){ # hasil di variabel U (bisa ketik nomor atau username)
-  local inp
-  list_users
+pick_user(){ # $1 = all | active | inactive ; hasil di variabel U
+  local f=${1:-all} inp
+  list_users "$f"
+  [[ $LISTED == 0 ]] && { pause; return 1; }
   read -rp "Nomor / Username : " inp
   if [[ "$inp" =~ ^[0-9]+$ ]]; then
-    U=$(awk -v n="$inp" 'NF{i++; if(i==n){print $1; exit}}' "$DB")
+    U=$(awk -v n="$inp" -v f="$f" 'NF{ if(f=="active" && $6!="active") next; if(f=="inactive" && $6=="active") next; i++; if(i==n){print $1; exit} }' "$DB")
   else
     U=$inp
   fi
@@ -391,7 +401,7 @@ check_login(){
 }
 
 lock_user(){
-  pick_user || return
+  pick_user active || return
   lock_db
   [[ "$(db_field $PROTO "$U" 6)" == "active" ]] && xray_del $PROTO "$U"
   db_set $PROTO "$U" 6 locked
@@ -401,7 +411,7 @@ lock_user(){
 
 unlock_user(){
   local st exp
-  pick_user || return
+  pick_user inactive || return
   st=$(db_field $PROTO "$U" 6); exp=$(db_field $PROTO "$U" 2)
   [[ "$st" == "active" ]] && { msg "${Y}User $U sudah aktif${N}"; return; }
   [[ "$exp" < "$(date +%F)" ]] && { msg "${R}Akun sudah expired, gunakan Renew${N}"; return; }
@@ -787,7 +797,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.4.1" > /etc/autoscript/version
+echo "v1.4.2" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----

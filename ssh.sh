@@ -182,22 +182,38 @@ show_account(){ # user pass exp ipl
   echo -e "$LINE"
 }
 
-list_users(){
-  header "LIST SSH USERS"
+list_users(){ # $1 = all | active | inactive
+  local f=${1:-all} title="LIST SSH USERS"
+  [[ $f == active ]] && title="SSH USER AKTIF"
+  [[ $f == inactive ]] && title="SSH USER TERKUNCI"
+  header "$title"
   printf " ${G}%-3s %-14s %-10s %-3s %-6s${N}\n" "NO" "USER" "EXPIRED" "IP" "ST"
   local i=0 u exp ipl st lab
   while read -r u exp ipl st; do
-    [[ -z "$u" ]] && continue; i=$((i+1))
+    [[ -z "$u" ]] && continue
+    [[ $f == active && "$st" != active ]] && continue
+    [[ $f == inactive && "$st" == active ]] && continue
+    i=$((i+1))
     case $st in active) lab="${G}ON${N}";; locked) lab="${R}LOCK${N}";; banned:*) lab="${Y}BAN${N}";; *) lab="$st";; esac
     printf " %-3s %-14s %-10s %-3s %b\n" "$i" "$u" "$exp" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")" "$lab"
   done < "$DB"
-  [[ $i == 0 ]] && echo -e " ${Y}Belum ada akun${N}"
+  LISTED=$i
+  if [[ $i == 0 ]]; then
+    case $f in active) echo -e " ${Y}Tidak ada user aktif${N}";; inactive) echo -e " ${Y}Tidak ada user yang terkunci${N}";; *) echo -e " ${Y}Belum ada akun${N}";; esac
+  fi
   echo -e "$LINE"; echo -e " ${G}Total : ${Y}$i${G} akun${N}"; echo -e "$LINE"
 }
 
-pick_user(){
-  local inp; list_users; read -rp "Nomor / Username : " inp
-  if [[ "$inp" =~ ^[0-9]+$ ]]; then U=$(awk -v n="$inp" 'NF{i++; if(i==n){print $1; exit}}' "$DB"); else U=$inp; fi
+pick_user(){ # $1 = all | active | inactive
+  local f=${1:-all} inp
+  list_users "$f"
+  [[ $LISTED == 0 ]] && { pause; return 1; }
+  read -rp "Nomor / Username : " inp
+  if [[ "$inp" =~ ^[0-9]+$ ]]; then
+    U=$(awk -v n="$inp" -v f="$f" 'NF{ if(f=="active" && $4!="active") next; if(f=="inactive" && $4=="active") next; i++; if(i==n){print $1; exit} }' "$DB")
+  else
+    U=$inp
+  fi
   [[ -n "$U" && -n "$(awk -v u="$U" '$1==u' "$DB")" ]] && return 0
   msg "${R}User tidak ditemukan${N}"; return 1
 }
@@ -263,9 +279,9 @@ check_login(){
   echo -e "$LINE"; pause
 }
 
-lock_user(){ pick_user || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db; echo -e "${G}User $U dikunci${N}"; pause; }
+lock_user(){ pick_user active || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db; echo -e "${G}User $U dikunci${N}"; pause; }
 unlock_user(){
-  pick_user || return
+  pick_user inactive || return
   [[ "$(sf "$U" 2)" < "$(date +%F)" ]] && { msg "${R}Akun expired, gunakan Renew${N}"; return; }
   lock_db; usermod -U "$U" 2>/dev/null; sset "$U" 4 active; unlock_db; echo -e "${G}User $U dibuka${N}"; pause
 }
