@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.3.0
+#  CASSANOVA TUNNELING - UPDATE v1.4.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -568,9 +568,10 @@ dashboard(){
 accounts(){
   local c1 c2 c3
   c1=$(grep -c . $ASD/db/vmess.db); c2=$(grep -c . $ASD/db/vless.db); c3=$(grep -c . $ASD/db/trojan.db)
+  local cs=$(grep -c . $ASD/db/ssh.db 2>/dev/null || echo 0)
   echo -e "      ${B}┌──────────────────────────────────┐${N}"
   echo -e "                ${G}LIST ACCOUNTS${N}"
-  printf  "        ${G}%-14s${N}: ${Y}%-4s${N}${G}ACCOUNT${N}\n" "SSH/OPENVPN" "0" "VMESS" "$c1" "VLESS" "$c2" "TROJAN" "$c3"
+  printf  "        ${G}%-14s${N}: ${Y}%-4s${N}${G}ACCOUNT${N}\n" "SSH/OPENVPN" "$cs" "VMESS" "$c1" "VLESS" "$c2" "TROJAN" "$c3"
   echo -e "      ${B}└──────────────────────────────────┘${N}"
 }
 
@@ -624,7 +625,7 @@ while true; do
   echo
   read -rp "$(echo -e "${G}Select From Options [1-9 or x] : ${N}")" opt
   case $opt in
-    1) coming ;;
+    1) m-ssh ;;
     2) m-xray vmess ;;
     3) m-xray vless ;;
     4) m-xray trojan ;;
@@ -786,8 +787,12 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.3.0" > /etc/autoscript/version
+echo "v1.4.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
+
+# ---- Modul SSH ----
+echo -e "${GRN}[SSH] Memasang modul SSH...${NC}"
+wget -qO /root/ssh.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/ssh.sh && bash /root/ssh.sh; rm -f /root/ssh.sh
 if xray run -test -config $CFG >/dev/null 2>&1; then
   systemctl restart xray
 else
