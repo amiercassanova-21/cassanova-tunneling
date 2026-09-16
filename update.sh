@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.4.2
+#  CASSANOVA TUNNELING - UPDATE v1.5.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -639,7 +639,9 @@ while true; do
     2) m-xray vmess ;;
     3) m-xray vless ;;
     4) m-xray trojan ;;
-    5|6|8) coming ;;
+    5) coming ;;
+    6) m-feature ;;
+    8) m-brand ;;
     7) set_bantime ;;
     9) running ;;
     x|X) clear; exit 0 ;;
@@ -797,12 +799,16 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.4.2" > /etc/autoscript/version
+echo "v1.5.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----
 echo -e "${GRN}[SSH] Memasang modul SSH...${NC}"
 wget -qO /root/ssh.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/ssh.sh && bash /root/ssh.sh; rm -f /root/ssh.sh
+
+# ---- Modul Features + Brand Name ----
+echo -e "${GRN}[FEATURES] Memasang modul Features & Brand Name...${NC}"
+wget -qO /root/features.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/features.sh && bash /root/features.sh; rm -f /root/features.sh
 if xray run -test -config $CFG >/dev/null 2>&1; then
   systemctl restart xray
 else
