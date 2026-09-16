@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.1.0
+#  CASSANOVA TUNNELING - UPDATE v1.1.1
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -239,20 +239,28 @@ show_account(){ # user id exp
 
 list_users(){
   header "LIST $UP USERS"
-  printf " ${G}%-13s %-10s %-3s %-13s %s${N}\n" "USER" "EXPIRED" "IP" "USED/QUOTA" "ST"
+  printf " ${G}%-3s %-12s %-10s %-3s %-12s %s${N}\n" "NO" "USER" "EXPIRED" "IP" "USED/QUOTA" "ST"
   local i=0 u exp id ipl q st qd
   while read -r u exp id ipl q st; do
     [[ -z "$u" ]] && continue; i=$((i+1))
     [[ "$q" == 0 ]] && qd="$(hbytes $(usage_get "$u"))/~" || qd="$(hbytes $(usage_get "$u"))/${q}G"
-    printf " %-13s %-10s %-3s %-13s %b\n" "$u" "$exp" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")" "$qd" "$(st_label "$st")"
+    printf " %-3s %-12s %-10s %-3s %-12s %b\n" "$i" "$u" "$exp" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")" "$qd" "$(st_label "$st")"
   done < "$DB"
   [[ $i == 0 ]] && echo -e " ${Y}Belum ada akun${N}"
   echo -e "$LINE"
+  echo -e " ${G}Total : ${Y}$i${G} akun${N}"
+  echo -e "$LINE"
 }
 
-pick_user(){ # hasil di variabel U
+pick_user(){ # hasil di variabel U (bisa ketik nomor atau username)
+  local inp
   list_users
-  read -rp "Username : " U
+  read -rp "Nomor / Username : " inp
+  if [[ "$inp" =~ ^[0-9]+$ ]]; then
+    U=$(awk -v n="$inp" 'NF{i++; if(i==n){print $1; exit}}' "$DB")
+  else
+    U=$inp
+  fi
   [[ -n "$U" && -n "$(db_get $PROTO "$U")" ]] && return 0
   msg "${R}User tidak ditemukan${N}"; return 1
 }
@@ -326,18 +334,20 @@ modify_uuid(){
 }
 
 check_login(){
-  local data u exp id ipl q st ips n found=0
+  local data u exp id ipl q st ips n found=0 no=0
   header "$UP LOGIN (5 MENIT)"
   data=$(recent_ips 5)
   while read -r u exp id ipl q st; do
     [[ -z "$u" ]] && continue
     ips=$(echo "$data" | awk -v u="$u" '$1==u{print $2}')
     [[ -z "$ips" ]] && continue
-    n=$(echo "$ips" | grep -c .); found=1
-    printf " ${Y}%-16s${N} %s IP  (limit: %s)\n" "$u" "$n" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")"
+    n=$(echo "$ips" | grep -c .); found=1; no=$((no+1))
+    printf " %-3s ${Y}%-14s${N} %s IP  (limit: %s)\n" "$no." "$u" "$n" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")"
     echo "$ips" | sed 's/^/    - /'
   done < "$DB"
   [[ $found == 0 ]] && echo -e " ${Y}Tidak ada user online${N}"
+  echo -e "$LINE"
+  echo -e " ${G}Total online : ${Y}$no${G} akun${N}"
   echo -e "$LINE"; pause
 }
 
@@ -365,16 +375,19 @@ unlock_user(){
 }
 
 recovery(){
-  local i=0 u exp id ipl q st del d new line
+  local i=0 u exp id ipl q st del d new line inp names=()
   header "RECOVERY $UP"
-  printf " ${G}%-16s %-12s${N}\n" "USERNAME" "DIHAPUS"
+  printf " ${G}%-3s %-16s %-12s${N}\n" "NO" "USERNAME" "DIHAPUS"
   while read -r u exp id ipl q st del; do
-    [[ -z "$u" ]] && continue; i=$((i+1))
-    printf " %-16s %-12s\n" "$u" "$del"
+    [[ -z "$u" ]] && continue; i=$((i+1)); names+=("$u")
+    printf " %-3s %-16s %-12s\n" "$i" "$u" "$del"
   done < <(tac "$TRASH" 2>/dev/null)
   [[ $i == 0 ]] && { echo -e " ${Y}Tidak ada akun yang bisa dipulihkan${N}"; pause; return; }
   echo -e "$LINE"
-  read -rp "Username : " u
+  echo -e " ${G}Total : ${Y}$i${G} akun${N}"
+  echo -e "$LINE"
+  read -rp "Nomor / Username : " inp
+  if [[ "$inp" =~ ^[0-9]+$ ]] && (( inp >= 1 && inp <= i )); then u=${names[$((inp-1))]}; else u=$inp; fi
   line=$(awk -v u="$u" '$1==u' "$TRASH" | tail -n1)
   [[ -z "$line" ]] && { msg "${R}User tidak ada di recovery${N}"; return; }
   user_exists_any "$u" && { msg "${R}Username sudah dipakai akun lain${N}"; return; }
@@ -655,7 +668,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.1.0" > /etc/autoscript/version
+echo "v1.1.1" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 if xray run -test -config $CFG >/dev/null 2>&1; then
   systemctl restart xray
