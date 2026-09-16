@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.1.1
+#  CASSANOVA TUNNELING - UPDATE v1.2.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -40,13 +40,13 @@ db_get(){ awk -v u="$2" '$1==u' "$ASD/db/$1.db"; }
 db_field(){ awk -v u="$2" -v f="$3" '$1==u{print $f}' "$ASD/db/$1.db"; }
 db_set(){ awk -v u="$2" -v f="$3" -v v="$4" '$1==u{$f=v}1' "$ASD/db/$1.db" > "$ASD/db/.$1.tmp" && mv "$ASD/db/.$1.tmp" "$ASD/db/$1.db"; }
 db_del(){ awk -v u="$2" '$1!=u' "$ASD/db/$1.db" > "$ASD/db/.$1.tmp" && mv "$ASD/db/.$1.tmp" "$ASD/db/$1.db"; }
-user_exists_any(){ local p; for p in $PROTOS; do [[ -n "$(db_get $p "$1")" ]] && return 0; done; return 1; }
+user_exists(){ [[ -n "$(db_get $1 "$2")" ]]; }
 
 make_client(){
   case $1 in
-    vless)  jq -nc --arg id "$3" --arg e "$2" '{id:$id,email:$e}' ;;
-    vmess)  jq -nc --arg id "$3" --arg e "$2" '{id:$id,alterId:0,email:$e}' ;;
-    trojan) jq -nc --arg id "$3" --arg e "$2" '{password:$id,email:$e}' ;;
+    vless)  jq -nc --arg id "$3" --arg e "$1.$2" '{id:$id,email:$e}' ;;
+    vmess)  jq -nc --arg id "$3" --arg e "$1.$2" '{id:$id,alterId:0,email:$e}' ;;
+    trojan) jq -nc --arg id "$3" --arg e "$1.$2" '{password:$id,email:$e}' ;;
   esac
 }
 
@@ -54,11 +54,11 @@ make_client(){
 xray_add(){ # proto user id
   local tag="$1-ws" c
   c=$(make_client "$1" "$2" "$3")
-  jq --arg t "$tag" --arg e "$2" --argjson c "$c" \
+  jq --arg t "$tag" --arg e "$1.$2" --argjson c "$c" \
     '(.inbounds[]|select(.tag==$t).settings.clients) |= (map(select(.email!=$e)) + [$c])' \
     $CFG > $CFG.tmp && mv $CFG.tmp $CFG
   jq --arg t "$tag" --argjson c "$c" '{inbounds:[.inbounds[]|select(.tag==$t)|.settings.clients=[$c]]}' $CFG > /tmp/cas-adu.json
-  xray api rmu --server=$API -tag="$tag" "$2" >/dev/null 2>&1
+  xray api rmu --server=$API -tag="$tag" "$1.$2" >/dev/null 2>&1
   if ! xray api adu --server=$API /tmp/cas-adu.json >/dev/null 2>&1; then
     systemctl restart xray
   fi
@@ -68,11 +68,11 @@ xray_add(){ # proto user id
 # Hapus user dari config + Xray yang sedang jalan (tanpa restart)
 xray_del(){ # proto user
   local tag="$1-ws" had
-  had=$(jq --arg t "$tag" --arg e "$2" '[.inbounds[]|select(.tag==$t).settings.clients[]|select(.email==$e)]|length' $CFG)
-  jq --arg t "$tag" --arg e "$2" '(.inbounds[]|select(.tag==$t).settings.clients) |= map(select(.email!=$e))' \
+  had=$(jq --arg t "$tag" --arg e "$1.$2" '[.inbounds[]|select(.tag==$t).settings.clients[]|select(.email==$e)]|length' $CFG)
+  jq --arg t "$tag" --arg e "$1.$2" '(.inbounds[]|select(.tag==$t).settings.clients) |= map(select(.email!=$e))' \
     $CFG > $CFG.tmp && mv $CFG.tmp $CFG
   if [[ "$had" -gt 0 ]]; then
-    xray api rmu --server=$API -tag="$tag" "$2" >/dev/null 2>&1 || systemctl restart xray
+    xray api rmu --server=$API -tag="$tag" "$1.$2" >/dev/null 2>&1 || systemctl restart xray
   fi
 }
 
@@ -81,10 +81,18 @@ remove_account(){ # proto user  -> pindah ke trash (bisa di-recovery)
   line=$(db_get $p "$u"); [[ -z "$line" ]] && return 1
   st=$(echo "$line" | awk '{print $6}')
   [[ "$st" == "active" ]] && xray_del $p "$u"
-  echo "$line $(date +%F)" >> $ASD/db/$p.trash
-  tail -n 200 $ASD/db/$p.trash > $ASD/db/.$p.trash && mv $ASD/db/.$p.trash $ASD/db/$p.trash
+  [[ "$u" != trial* ]] && echo "$line $(date +%F)" >> $ASD/db/$p.trash
   db_del $p "$u"
-  rm -f $ASD/usage/$u
+  rm -f $ASD/usage/$p/$u
+}
+
+# hapus dari recovery akun yang sudah dihapus lebih dari 4 bulan (120 hari)
+trash_prune(){
+  local p lim; lim=$(date -d "-120 days" +%F)
+  for p in $PROTOS; do
+    [[ -f $ASD/db/$p.trash ]] || continue
+    awk -v l="$lim" 'NF && $7>=l' $ASD/db/$p.trash > $ASD/db/.$p.trash && mv $ASD/db/.$p.trash $ASD/db/$p.trash
+  done
 }
 
 expire_all(){
@@ -95,21 +103,24 @@ expire_all(){
       [[ -n "$u" && "$exp" < "$today" ]] && remove_account $p "$u"
     done < <(cat $ASD/db/$p.db)
   done
+  trash_prune
 }
 
 # Kumpulkan pemakaian bandwidth per user (byte) dari Xray stats
 usage_collect(){
-  local name val u old
+  local name val e p u old
   xray api statsquery --server=$API -pattern "user>>>" -reset 2>/dev/null \
   | jq -r '.stat[]? | "\(.name) \(.value // 0)"' 2>/dev/null \
   | while read -r name val; do
-      u=$(echo "$name" | awk -F'>>>' '{print $2}')
-      [[ -z "$u" || -z "$val" || "$val" == "0" ]] && continue
-      old=$(cat $ASD/usage/$u 2>/dev/null || echo 0)
-      echo $(( old + val )) > $ASD/usage/$u
+      e=$(echo "$name" | awk -F'>>>' '{print $2}')
+      [[ "$e" != *.* || -z "$val" || "$val" == "0" ]] && continue
+      p=${e%%.*}; u=${e#*.}
+      mkdir -p $ASD/usage/$p
+      old=$(cat $ASD/usage/$p/$u 2>/dev/null || echo 0)
+      echo $(( old + val )) > $ASD/usage/$p/$u
     done
 }
-usage_get(){ cat $ASD/usage/$1 2>/dev/null || echo 0; }
+usage_get(){ cat $ASD/usage/$1/$2 2>/dev/null || echo 0; }
 hbytes(){ numfmt --to=iec --suffix=B "$1" 2>/dev/null || echo "$1"; }
 
 # Output: "user ip" unik dari access log N menit terakhir
@@ -147,12 +158,12 @@ for p in $PROTOS; do
     [[ "$st" != "active" ]] && continue
     # kuota bandwidth
     if [[ "$q" =~ ^[0-9]+$ ]] && (( q > 0 )); then
-      used=$(usage_get "$u")
+      used=$(usage_get $p "$u")
       if (( used >= q * 1073741824 )); then xray_del $p "$u"; db_set $p "$u" 6 quota; continue; fi
     fi
     # limit IP
     if [[ "$ipl" =~ ^[0-9]+$ ]] && (( ipl > 0 )); then
-      n=$(echo "$COUNTS" | awk -v u="$u" '$1==u{print $2}')
+      n=$(echo "$COUNTS" | awk -v u="$p.$u" '$1==u{print $2}')
       if [[ -n "$n" ]] && (( n > ipl )); then
         xray_del $p "$u"; db_set $p "$u" 6 "banned:$(( now + BANMIN*60 ))"
       fi
@@ -243,7 +254,7 @@ list_users(){
   local i=0 u exp id ipl q st qd
   while read -r u exp id ipl q st; do
     [[ -z "$u" ]] && continue; i=$((i+1))
-    [[ "$q" == 0 ]] && qd="$(hbytes $(usage_get "$u"))/~" || qd="$(hbytes $(usage_get "$u"))/${q}G"
+    [[ "$q" == 0 ]] && qd="$(hbytes $(usage_get $PROTO "$u"))/~" || qd="$(hbytes $(usage_get $PROTO "$u"))/${q}G"
     printf " %-3s %-12s %-10s %-3s %-12s %b\n" "$i" "$u" "$exp" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")" "$qd" "$(st_label "$st")"
   done < "$DB"
   [[ $i == 0 ]] && echo -e " ${Y}Belum ada akun${N}"
@@ -270,7 +281,7 @@ create(){
   header "CREATE $UP"
   read -rp "Username : " u
   [[ ! "$u" =~ ^[a-zA-Z0-9_-]{3,20}$ ]] && { msg "${R}Username 3-20 karakter: huruf, angka, - dan _${N}"; return; }
-  user_exists_any "$u" && { msg "${R}Username sudah dipakai (di VLESS/VMESS/TROJAN)${N}"; return; }
+  user_exists $PROTO "$u" && { msg "${R}Username $u sudah ada di $UP${N}"; return; }
   if [[ "$custom" == 1 ]]; then read -rp "UUID/Password : " id; else id=$(uuidgen); fi
   [[ -z "$id" || "$id" =~ [[:space:]] ]] && { msg "${R}UUID tidak valid${N}"; return; }
   read -rp "Masa aktif (hari) : " d;           num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
@@ -280,7 +291,7 @@ create(){
   lock_db
   echo "$u $exp $id $ipl $q active" >> "$DB"
   xray_add $PROTO "$u" "$id"
-  rm -f $ASD/usage/$u
+  rm -f $ASD/usage/$PROTO/$u
   unlock_db
   show_account "$u" "$id" "$exp"; pause
 }
@@ -313,7 +324,7 @@ renew(){
   [[ "$base" < "$today" ]] && base=$today
   new=$(date -d "$base +$d days" +%F)
   db_set $PROTO "$U" 2 "$new"
-  rm -f $ASD/usage/$U
+  rm -f $ASD/usage/$PROTO/$U
   st=$(db_field $PROTO "$U" 6)
   if [[ "$st" == "quota" ]]; then xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"; db_set $PROTO "$U" 6 active; fi
   unlock_db
@@ -339,7 +350,7 @@ check_login(){
   data=$(recent_ips 5)
   while read -r u exp id ipl q st; do
     [[ -z "$u" ]] && continue
-    ips=$(echo "$data" | awk -v u="$u" '$1==u{print $2}')
+    ips=$(echo "$data" | awk -v u="$PROTO.$u" '$1==u{print $2}')
     [[ -z "$ips" ]] && continue
     n=$(echo "$ips" | grep -c .); found=1; no=$((no+1))
     printf " %-3s ${Y}%-14s${N} %s IP  (limit: %s)\n" "$no." "$u" "$n" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")"
@@ -367,7 +378,7 @@ unlock_user(){
   [[ "$st" == "active" ]] && { msg "${Y}User $U sudah aktif${N}"; return; }
   [[ "$exp" < "$(date +%F)" ]] && { msg "${R}Akun sudah expired, gunakan Renew${N}"; return; }
   lock_db
-  [[ "$st" == "quota" ]] && rm -f $ASD/usage/$U
+  [[ "$st" == "quota" ]] && rm -f $ASD/usage/$PROTO/$U
   xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"
   db_set $PROTO "$U" 6 active
   unlock_db
@@ -390,7 +401,7 @@ recovery(){
   if [[ "$inp" =~ ^[0-9]+$ ]] && (( inp >= 1 && inp <= i )); then u=${names[$((inp-1))]}; else u=$inp; fi
   line=$(awk -v u="$u" '$1==u' "$TRASH" | tail -n1)
   [[ -z "$line" ]] && { msg "${R}User tidak ada di recovery${N}"; return; }
-  user_exists_any "$u" && { msg "${R}Username sudah dipakai akun lain${N}"; return; }
+  user_exists $PROTO "$u" && { msg "${R}Username $u masih aktif di $UP. Hapus/ubah akun itu dulu.${N}"; return; }
   read -rp "Masa aktif baru (hari) : " d; num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
   new=$(date -d "+$d days" +%F)
   read -r u exp id ipl q st del <<< "$line"
@@ -417,7 +428,7 @@ edit_field(){ # field(4=ip,5=quota) all(0/1)
   # buka otomatis akun yang terkunci kuota bila kuota baru mencukupi
   if [[ $f == 5 ]]; then
     for u in $TARGETS; do
-      st=$(db_field $PROTO "$u" 6); used=$(usage_get "$u")
+      st=$(db_field $PROTO "$u" 6); used=$(usage_get $PROTO "$u")
       if [[ "$st" == "quota" ]] && { (( v == 0 )) || (( used < v * 1073741824 )); }; then
         xray_add $PROTO "$u" "$(db_field $PROTO "$u" 3)"; db_set $PROTO "$u" 6 active
       fi
@@ -640,6 +651,20 @@ jq '.log.access="/var/log/xray/access.log" | .log.error="/var/log/xray/error.log
     | .policy.levels["0"].statsUserUplink=true | .policy.levels["0"].statsUserDownlink=true' \
   $CFG > $CFG.tmp && mv $CFG.tmp $CFG
 
+# email Xray dibuat per protokol (vless.nama, vmess.nama, trojan.nama)
+for p in vless vmess trojan; do
+  jq --arg t "$p-ws" --arg p "$p" \
+    '(.inbounds[]|select(.tag==$t).settings.clients) |= map(if ((.email // "") | startswith($p + ".")) then . else .email = ($p + "." + (.email // "")) end)' \
+    $CFG > $CFG.tmp && mv $CFG.tmp $CFG
+  # recovery: buang akun trial & yang dihapus > 4 bulan
+  lim=$(date -d "-120 days" +%F)
+  awk -v l="$lim" 'NF && $1 !~ /^trial/ && $7>=l' /etc/autoscript/db/$p.trash > /etc/autoscript/db/.$p.trash \
+    && mv /etc/autoscript/db/.$p.trash /etc/autoscript/db/$p.trash
+done
+# data pemakaian lama (format per-nama) dihapus, mulai hitung ulang per protokol
+find /etc/autoscript/usage -maxdepth 1 -type f -delete 2>/dev/null
+mkdir -p /etc/autoscript/usage/vless /etc/autoscript/usage/vmess /etc/autoscript/usage/trojan
+
 NG=/etc/nginx/conf.d/xray.conf
 if [[ -f $NG ]] && ! grep -q "X-Forwarded-For" $NG; then
   sed -i '/proxy_set_header Host \$host;/a\        proxy_set_header X-Forwarded-For $remote_addr;' $NG
@@ -668,7 +693,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.1.1" > /etc/autoscript/version
+echo "v1.2.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 if xray run -test -config $CFG >/dev/null 2>&1; then
   systemctl restart xray
