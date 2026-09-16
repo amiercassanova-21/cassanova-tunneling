@@ -25,7 +25,7 @@ DROPBEAR_EXTRA_ARGS="-p 109"
 DROPBEAR_BANNER="/etc/autoscript/banner.txt"
 DROPBEAR_RECEIVE_WINDOW=65536
 EOF
-echo -e "\n$(cat $ASD/brand 2>/dev/null || echo CASSANOVA TUNNELING)\n" > $ASD/banner.txt
+[[ -s $ASD/banner.txt ]] || echo -e "\nCASSANOVA TUNNELING\n" > $ASD/banner.txt
 grep -q '^/bin/false' /etc/shells || echo '/bin/false' >> /etc/shells
 grep -q '^/usr/sbin/nologin' /etc/shells || echo '/usr/sbin/nologin' >> /etc/shells
 systemctl enable dropbear >/dev/null 2>&1
@@ -164,7 +164,7 @@ exists(){ id "$1" &>/dev/null; }
 ssh_remove(){ # user -> trash + hapus akun sistem
   local u=$1 line
   line=$(awk -v u="$u" '$1==u' "$DB"); [[ -z "$line" ]] && return 1
-  [[ "$u" != trial* ]] && echo "$line $(date +%F)" >> "$TRASH"
+  is_trial "$u" || echo "$line $(date +%F)" >> "$TRASH"
   userdel -f "$u" 2>/dev/null
   awk -v u="$u" '$1!=u' "$DB" > "$DB.t" && mv "$DB.t" "$DB"
   rm -f $ASD/usage/ssh/$u
@@ -172,10 +172,10 @@ ssh_remove(){ # user -> trash + hapus akun sistem
 ssh_expire(){
   local today u exp lim list=""; today=$(date +%F); lim=$(date -d "-120 days" +%F)
   while read -r u exp _; do
-    if [[ -n "$u" && "$exp" < "$today" ]]; then ssh_remove "$u"; [[ "$u" != trial* ]] && list+="• SSH <code>$u</code> (exp $exp)"$'\n'; fi
+    if [[ -n "$u" && "$exp" < "$today" ]]; then ssh_remove "$u"; is_trial "$u" || list+="• SSH <code>$u</code> (exp $exp)"$'\n'; fi
   done < <(cat "$DB")
   [[ -n "$list" ]] && cas_notify "⏰ <b>Akun Expired</b> (masuk Recovery)"$'\n'"$list"
-  awk -v l="$lim" 'NF && $1 !~ /^trial/ && $NF>=l' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"
+  awk -v l="$lim" 'NF && $1 !~ /trial/ && $NF>=l' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"
 }
 
 show_account(){ # user pass exp ipl
@@ -251,7 +251,8 @@ create(){
 
 trial(){
   local u p m exp
-  u="trial$(tr -dc a-z0-9 </dev/urandom | head -c4)"; p=$(tr -dc a-z0-9 </dev/urandom | head -c6)
+  u=$(gen_trial_user); p=$(tr -dc a-z0-9 </dev/urandom | head -c6)
+  b=$(brand_txt); [[ "$(cat $ASD/brand_uuid 2>/dev/null)" == on && -n "$b" ]] && p="${b}-${p}"
   read -rp "Durasi trial (menit) [60] : " m; m=${m:-60}; num_ok "$m" || { msg "${R}Harus angka${N}"; return; }
   exp=$(date -d "+$m minutes" +%F)
   useradd -s /bin/false -M "$u" 2>/dev/null; echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1

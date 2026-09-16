@@ -19,14 +19,13 @@ echo -e "Pastikan domain sudah diarahkan ke IP VPS ini"
 echo -e "(Cloudflare: mode DNS only / awan abu-abu)\n"
 read -rp "Masukkan domain : " DOMAIN
 [[ -z "$DOMAIN" ]] && echo -e "${RED}Domain tidak boleh kosong${NC}" && exit 1
-read -rp "Nama brand [CASSANOVA TUNNELING] : " BRAND
-BRAND=${BRAND:-CASSANOVA TUNNELING}
+BRAND=cassanova
 
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p /etc/autoscript/db /var/log/xray /var/www/html
 echo "$DOMAIN" > /etc/autoscript/domain
 echo "$BRAND"  > /etc/autoscript/brand
-echo "v1.8.0"  > /etc/autoscript/version
+echo "v1.8.1"  > /etc/autoscript/version
 touch /etc/autoscript/db/vless.db /etc/autoscript/db/vmess.db /etc/autoscript/db/trojan.db
 
 # ---------- Paket dasar ----------

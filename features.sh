@@ -42,7 +42,7 @@ tg(){ # kirim pesan ke bot owner VPS (jika ada)
   local BOT_TOKEN CHAT_ID; [[ -f $ASD/bot ]] && . $ASD/bot
   [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && return 0
   curl -s --max-time 15 -o /dev/null --data-urlencode "chat_id=$CHAT_ID" \
-    --data-urlencode "text=🖥 <b>$(cat $ASD/brand)</b> | $(cat $ASD/domain)"$'\n'"$1" \
+    --data-urlencode "text=🖥 <b>CASSANOVA TUNNELING</b> | $(cat $ASD/domain)"$'\n'"$1" \
     --data-urlencode "parse_mode=HTML" "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
 }
 
@@ -95,14 +95,8 @@ if [[ "$1" == "--check" || "$1" == "--auto" ]]; then
     elif [[ $rc == 2 ]]; then
       tg "⚠️ <b>Auto Update gagal</b> ($cur → $latest)"$'\n'"Sudah dikembalikan otomatis ke $cur. Script tetap berjalan normal."
     fi
-  else
-    # auto update OFF → hanya kirim pemberitahuan sekali per versi
-    if [[ "$(cat $ASD/notified 2>/dev/null)" != "$latest" ]]; then
-      cl=$(fetch_changelog)
-      tg "🔔 <b>Update tersedia</b>: $cur → $latest"$'\n'"Update lewat: menu → 6 → 12"${cl:+$'\n\n'"📝 <b>Perubahan:</b>"$'\n'"$cl"}
-      echo "$latest" > $ASD/notified
-    fi
   fi
+  # auto update OFF → diam saja (info update diumumkan owner lewat channel Telegram)
   exit 0
 fi
 
@@ -171,7 +165,7 @@ fi
 cat > /usr/local/sbin/m-feature <<'EOF'
 #!/bin/bash
 . /usr/local/lib/autoscript/lib.sh
-BRAND=$(cat $ASD/brand); DOMAIN=$(cat $ASD/domain); VER=$(cat $ASD/version)
+BRAND=$SCNAME; DOMAIN=$(cat $ASD/domain); VER=$(cat $ASD/version)
 LINE="${B}════════════════════════════════════${N}"
 header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
 bar(){ echo -e "$LINE"; printf "${BGB}${W}%*s%*s${N}\n" $(( (36+${#1})/2 )) "$1" $(( 36-(36+${#1})/2 )) ""; echo -e "$LINE"; }
@@ -285,7 +279,7 @@ change_domain(){
 info_system(){
   header "INFORMATION SYSTEM"
   local IP; IP=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
-  printf " ${G}%-14s${N}: %s\n" "Brand" "$BRAND" "Version" "$VER" "OS" "$(. /etc/os-release; echo $PRETTY_NAME)" \
+  printf " ${G}%-14s${N}: %s\n" "Script" "$SCNAME" "Brand" "$(brand_txt)" "Version" "$VER" "OS" "$(. /etc/os-release; echo $PRETTY_NAME)" \
     "Kernel" "$(uname -r)" "Domain" "$DOMAIN" "IP" "$IP" \
     "CPU" "$(nproc) core" "RAM" "$(free -m|awk '/Mem:/{print $2"M"}')" \
     "Uptime" "$(uptime -p|sed 's/up //')" "BBR" "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
@@ -345,30 +339,45 @@ cat > /usr/local/sbin/m-brand <<'EOF'
 #!/bin/bash
 . /usr/local/lib/autoscript/lib.sh
 LINE="${B}════════════════════════════════════${N}"
-header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
+onoff(){ [[ "$(cat $ASD/$1 2>/dev/null)" == on ]] && echo -e "${G}ON${N}" || echo -e "${R}OFF${N}"; }
 while true; do
-  BRAND=$(cat $ASD/brand)
-  header "SET BRAND NAME"
-  echo -e "\n Brand sekarang : ${O}$BRAND${N}\n"
-  echo -e " ${C}1.)${N} Ganti nama brand"
-  echo -e " ${C}2.)${N} Ganti banner login SSH"
-  echo -e " ${C}3.)${N} Back to Menu"
+  clear
+  echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"; echo -e "$LINE\n"
+  echo -e "      ${G}With Brand Name${N} : $(onoff brand_uuid)"
+  echo -e "      ${G}With User${N}       : $(onoff brand_user)"
+  echo -e "      ${G}Brand Name${N}      : ${O}$(brand_txt)${N}\n"
+  echo -e "      ${G}Brand Name for${N} ${O}[password/uuid]${N}"
+  echo -e "      ${G}With User for${N}  ${O}[user trial]${N}"
+  echo -e "\n$LINE"
+  echo -e "      ${Y}Contoh jika ON:${N}"
+  echo -e "      UUID/Pass  : $(brand_txt)-a1b2c3d4e5f6"
+  echo -e "      User trial : $(brand_txt)-trialx9k2"
+  echo -e "$LINE\n"
+  echo -e " ${C}1.)${N} Set ON Brand Name"
+  echo -e " ${C}2.)${N} Set ON With User"
+  echo -e " ${C}3.)${N} Set OFF Brand Name"
+  echo -e " ${C}4.)${N} Set OFF With User"
+  echo -e " ${C}5.)${N} Change Brand Name"
+  echo -e " ${C}6.)${N} Change Banner SSH"
+  echo -e " ${C}7.)${N} Back to Menu"
   echo -e " ${C}x.)${N} Exit"
-  echo -e "\n$LINE\n"
-  read -rp "$(echo -e "${G}Select From Options [1-3 or x] : ${N}")" o
+  echo -e "\n$LINE"
+  read -rp "$(echo -e "${G}Select From Options [1-7 or x] : ${N}")" o
   case $o in
-    1) read -rp "Nama brand baru : " nb
-       [[ -z "$nb" ]] && { echo -e "${R}Kosong${N}"; sleep 1; continue; }
-       echo "$nb" > $ASD/brand
-       # perbarui baris pertama banner (nama brand)
-       printf '\n%s\n\n' "$nb" > $ASD/banner.txt
-       echo -e "${G}Brand diganti ke: $nb${N}"; sleep 2 ;;
-    2) echo -e "Ketik banner (akhiri dengan baris berisi END):"
+    1) echo on  > $ASD/brand_uuid; echo -e "${G}Brand Name ON${N}"; sleep 1 ;;
+    2) echo on  > $ASD/brand_user; echo -e "${G}With User ON${N}"; sleep 1 ;;
+    3) echo off > $ASD/brand_uuid; echo -e "${Y}Brand Name OFF${N}"; sleep 1 ;;
+    4) echo off > $ASD/brand_user; echo -e "${Y}With User OFF${N}"; sleep 1 ;;
+    5) read -rp "Brand baru (huruf/angka/-, maks 12) : " nb
+       nb=$(echo "$nb" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-'); nb=${nb:0:12}
+       [[ -z "$nb" ]] && { echo -e "${R}Brand tidak valid${N}"; sleep 2; continue; }
+       echo "$nb" > $ASD/brand; echo -e "${G}Brand diganti: $nb${N}"; sleep 2 ;;
+    6) echo -e "Ketik banner SSH (akhiri dengan baris berisi END):"
        : > /tmp/cas-banner
        while IFS= read -r l; do [[ "$l" == "END" ]] && break; echo "$l" >> /tmp/cas-banner; done
        cp /tmp/cas-banner $ASD/banner.txt; rm -f /tmp/cas-banner
        echo -e "${G}Banner diganti${N}"; sleep 2 ;;
-    3) exit 0 ;;
+    7) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
   esac
 done

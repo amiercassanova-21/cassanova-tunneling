@@ -16,7 +16,7 @@ cas_notify(){
   local BOT_TOKEN CHAT_ID NOTIFY
   . /etc/autoscript/bot
   [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" || "$NOTIFY" != "on" ]] && return 0
-  local H; H="🖥 <b>$(cat /etc/autoscript/brand 2>/dev/null)</b> | $(cat /etc/autoscript/domain 2>/dev/null)"
+  local H; H="🖥 <b>CASSANOVA TUNNELING</b> | $(cat /etc/autoscript/domain 2>/dev/null)"
   ( curl -s --max-time 15 -o /dev/null \
       --data-urlencode "chat_id=$CHAT_ID" \
       --data-urlencode "text=$H"$'\n'"$1" \
@@ -97,7 +97,7 @@ chmod +x /usr/local/sbin/cas-report
 cat > /usr/local/sbin/m-bot <<'EOF'
 #!/bin/bash
 . /usr/local/lib/autoscript/lib.sh
-BRAND=$(cat $ASD/brand)
+BRAND=$SCNAME
 BOTF=$ASD/bot
 LINE="${B}════════════════════════════════════${N}"
 header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
@@ -233,7 +233,7 @@ sed -i "s#FILES_HERE#etc/autoscript usr/local/etc/xray/config.json etc/passwd et
 cat > /usr/local/sbin/cas-backup-caption <<'EOF'
 #!/bin/bash
 I=/etc/autoscript/ipinfo.json
-B=$(cat /etc/autoscript/brand); D=$(cat /etc/autoscript/domain)
+B="CASSANOVA TUNNELING"; D=$(cat /etc/autoscript/domain)
 IP=$(jq -r '.ip // "-"' $I 2>/dev/null)
 ISP=$(jq -r '.org // "-"' $I 2>/dev/null | sed 's/^AS[0-9]* //')
 CITY=$(jq -r '.city // "-"' $I 2>/dev/null)

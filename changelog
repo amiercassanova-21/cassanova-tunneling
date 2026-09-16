@@ -1,5 +1,4 @@
-v1.8.0
-- Auto update (pilihan ON/OFF), notifikasi update ke Telegram
-- Update tidak memutus koneksi user (restart hanya bila perlu, ditunda ke 04:00 saat auto update)
-- Rollback otomatis jika update gagal
-- Channel uji coba (beta) khusus owner
+v1.8.1
+- Header depan tetap CASSANOVA TUNNELING
+- Set Brand Name ala Potato: brand untuk UUID/password & user trial (ON/OFF)
+- Pemberitahuan update di dashboard & Telegram dihapus (auto update tetap jalan)

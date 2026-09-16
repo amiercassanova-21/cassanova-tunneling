@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.8.0
+#  CASSANOVA TUNNELING - UPDATE v1.8.1
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -48,6 +48,26 @@ CFG=/usr/local/etc/xray/config.json
 ASD=/etc/autoscript
 API=127.0.0.1:10085
 PROTOS="vless vmess trojan"
+SCNAME="CASSANOVA TUNNELING"   # identitas script (tampil di depan, tidak bisa diubah buyer)
+
+# ---- Brand Name ala Potato ----
+# brand      : teks brand (huruf kecil/angka/-, maks 12)
+# brand_uuid : on/off -> UUID/password acak diawali brand   (Brand Name for [password/uuid])
+# brand_user : on/off -> username trial diawali brand       (With User for [user trial])
+brand_txt(){ local b; b=$(cat $ASD/brand 2>/dev/null | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-'); echo "${b:0:12}"; }
+gen_id(){ # UUID/password acak
+  local b; b=$(brand_txt)
+  if [[ "$(cat $ASD/brand_uuid 2>/dev/null)" == on && -n "$b" ]]; then
+    echo "${b}-$(tr -dc a-z0-9 </dev/urandom | head -c 12)"
+  else uuidgen; fi
+}
+gen_trial_user(){
+  local b; b=$(brand_txt)
+  if [[ "$(cat $ASD/brand_user 2>/dev/null)" == on && -n "$b" ]]; then
+    echo "${b}-trial$(tr -dc a-z0-9 </dev/urandom | head -c4)"
+  else echo "trial$(tr -dc a-z0-9 </dev/urandom | head -c4)"; fi
+}
+is_trial(){ [[ "$1" == *trial* ]]; }
 # Format DB: user exp id limit_ip quota_gb status
 # status: active | locked | quota | banned:<epoch>
 
@@ -104,7 +124,7 @@ remove_account(){ # proto user  -> pindah ke trash (bisa di-recovery)
   line=$(db_get $p "$u"); [[ -z "$line" ]] && return 1
   st=$(echo "$line" | awk '{print $6}')
   [[ "$st" == "active" ]] && xray_del $p "$u"
-  [[ "$u" != trial* ]] && echo "$line $(date +%F)" >> $ASD/db/$p.trash
+  is_trial "$u" || echo "$line $(date +%F)" >> $ASD/db/$p.trash
   db_del $p "$u"
   rm -f $ASD/usage/$p/$u
 }
@@ -125,7 +145,7 @@ expire_all(){
     while read -r u exp _; do
       if [[ -n "$u" && "$exp" < "$today" ]]; then
         remove_account $p "$u"
-        [[ "$u" != trial* ]] && list+="• ${p^^} <code>$u</code> (exp $exp)"$'\n'
+        is_trial "$u" || list+="• ${p^^} <code>$u</code> (exp $exp)"$'\n'
       fi
     done < <(cat $ASD/db/$p.db)
   done
@@ -347,7 +367,7 @@ create(){
   read -rp "Username : " u
   [[ ! "$u" =~ ^[a-zA-Z0-9_-]{3,20}$ ]] && { msg "${R}Username 3-20 karakter: huruf, angka, - dan _${N}"; return; }
   user_exists $PROTO "$u" && { msg "${R}Username $u sudah ada di $UP${N}"; return; }
-  if [[ "$custom" == 1 ]]; then read -rp "UUID/Password : " id; else id=$(uuidgen); fi
+  if [[ "$custom" == 1 ]]; then read -rp "UUID/Password : " id; else id=$(gen_id); fi
   [[ -z "$id" || "$id" =~ [[:space:]] ]] && { msg "${R}UUID tidak valid${N}"; return; }
   read -rp "Masa aktif (hari) : " d;           num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
   read -rp "Limit IP (0 = unlimited) [0] : " ipl; ipl=${ipl:-0}; num_ok "$ipl" || { msg "${R}Harus angka${N}"; return; }
@@ -364,9 +384,9 @@ create(){
 
 trial(){
   local u id m exp
-  u="trial$(tr -dc a-z0-9 </dev/urandom | head -c4)"
+  u=$(gen_trial_user)
   read -rp "Durasi trial (menit) [60] : " m; m=${m:-60}; num_ok "$m" || { msg "${R}Harus angka${N}"; return; }
-  id=$(uuidgen); exp=$(date -d "+$m minutes" +%F)
+  id=$(gen_id); exp=$(date -d "+$m minutes" +%F)
   lock_db
   echo "$u $exp $id 1 0 active" >> "$DB"
   xray_add $PROTO "$u" "$id"
@@ -402,7 +422,7 @@ renew(){
 modify_uuid(){
   local id st
   pick_user || return
-  read -rp "UUID baru (kosongkan = acak) : " id; id=${id:-$(uuidgen)}
+  read -rp "UUID baru (kosongkan = acak) : " id; id=${id:-$(gen_id)}
   [[ "$id" =~ [[:space:]] ]] && { msg "${R}UUID tidak valid${N}"; return; }
   lock_db
   db_set $PROTO "$U" 3 "$id"
@@ -589,7 +609,7 @@ dashboard(){
   V=$(vnstat --oneline 2>/dev/null)
   if [[ "$V" == 1\;* ]]; then IFS=';' read -ra F <<< "$V"; else F=(- - - - - - - - - - - -); fi
 
-  top; echo -e "${B}│${N} ${BG}${W}$(center "$BRAND")${N} ${B}│${N}"; bot
+  top; echo -e "${B}│${N} ${BG}${W}$(center "$SCNAME")${N} ${B}│${N}"; bot
   top
   row "OS" "$PRETTY_NAME"; row "RAM" "$RAM"; row "SWAP" "$SWAP"
   row "CITY" "$CITY"; row "ISP" "$ISP"
@@ -620,7 +640,7 @@ accounts(){
 
 version_box(){
   echo -e "    ${B}┌──────────────────────────────────────┐${N}"
-  printf  "    ${B}│${N} ${G}%-12s${N}: ${O}%s${N}\n" "Version" "$VER" "Brand" "$BRAND" "Client Name" "$(hostname)" "Expiry In" "Lifetime"
+  printf  "    ${B}│${N} ${G}%-12s${N}: ${O}%s${N}\n" "Version" "$VER" "Brand" "$(brand_txt)" "Client Name" "$(hostname)" "Expiry In" "Lifetime"
   echo -e "    ${B}└──────────────────────────────────────┘${N}"
 }
 
@@ -631,7 +651,7 @@ set_bantime(){
   while true; do
     clear
     echo -e "${B}════════════════════════════════════${N}"
-    printf "${P}%*s${N}\n" $(( (36+${#BRAND})/2 )) "$BRAND"
+    printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"
     echo -e "${B}════════════════════════════════════${N}\n"
     echo -e "${G}Time Banned Active : ${O}$(cat $ASD/bantime 2>/dev/null || echo 15)m:0s${N}"
     echo -e "${Y}(lama akun dikunci otomatis saat melebihi Limit IP)${N}\n"
@@ -653,12 +673,7 @@ set_bantime(){
 if [[ "$1" == "info" ]]; then
   dashboard; accounts; version_box
   echo -e "\n          ${G}to access use ${C}menu${G} command${N}\n"
-  LT=$(cat $ASD/latest 2>/dev/null)
-  if [[ -n "$LT" && "$LT" != "$VER" ]]; then
-    echo -e " ${Y}Update tersedia: $VER → $LT${N} (menu → 6 → 12)\n"
-  else
-    echo -e " ${G}Up to date${N}\n"
-  fi
+  if [[ "$(cat $ASD/autoupdate 2>/dev/null)" == on ]]; then echo -e " ${G}Auto update : ON${N}\n"; fi
   exit 0
 fi
 
@@ -700,7 +715,7 @@ st(){ systemctl is-active --quiet "$1" 2>/dev/null && echo -e "${G}[ON]${N}" || 
 port(){ ss -tln 2>/dev/null | grep -q ":$1 " && echo -e "${G}[ON]${N}" || echo -e "${R}[OFF]${N}"; }
 clear
 echo -e "${B}════════════════════════════════════${N}"
-printf "${P}%*s${N}\n" $(( (36+${#BRAND})/2 )) "$BRAND"
+printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"
 echo -e "${B}════════════════════════════════════${N}\n"
 printf "${G}%-16s${N}: %b\n" \
   "SSH" "$(st ssh)" "DROPBEAR" "$(st dropbear)" "OPENVPN" "$(st openvpn)" \
@@ -724,6 +739,10 @@ for p in vless vmess trojan; do
     && mv /etc/autoscript/db/.$p.tmp /etc/autoscript/db/$p.db
 done
 [[ -f /etc/autoscript/bantime ]] || echo 15 > /etc/autoscript/bantime
+OLDB=$(cat /etc/autoscript/brand 2>/dev/null)
+if [[ -z "$OLDB" || "$OLDB" == *" "* ]]; then echo "cassanova" > /etc/autoscript/brand; fi
+[[ -f /etc/autoscript/brand_uuid ]] || echo off > /etc/autoscript/brand_uuid
+[[ -f /etc/autoscript/brand_user ]] || echo off > /etc/autoscript/brand_user
 
 # =====================================================
 #  XRAY + NGINX
@@ -741,7 +760,7 @@ for p in vless vmess trojan; do
     $CFG > $CFG.tmp && mv $CFG.tmp $CFG
   # recovery: buang akun trial & yang dihapus > 4 bulan
   lim=$(date -d "-120 days" +%F)
-  awk -v l="$lim" 'NF && $1 !~ /^trial/ && $7>=l' /etc/autoscript/db/$p.trash > /etc/autoscript/db/.$p.trash \
+  awk -v l="$lim" 'NF && $1 !~ /trial/ && $7>=l' /etc/autoscript/db/$p.trash > /etc/autoscript/db/.$p.trash \
     && mv /etc/autoscript/db/.$p.trash /etc/autoscript/db/$p.trash
 done
 # data pemakaian lama (format per-nama) dihapus, mulai hitung ulang per protokol
@@ -851,7 +870,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.8.0" > /etc/autoscript/version
+echo "v1.8.1" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----
