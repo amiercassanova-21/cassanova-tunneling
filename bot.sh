@@ -10,21 +10,29 @@ apt install -y zip unzip >/dev/null 2>&1
 
 # helper notifikasi dipakai script lain (mis. saat create/expire)
 cat > /usr/local/lib/autoscript/notify.sh <<'EOF'
-# kirim notifikasi Telegram: cas_notify "pesan"   (HTML, baris baru pakai newline asli)
-cas_notify(){
-  [[ -f /etc/autoscript/bot ]] || return 0
+# Header notif: nama script | domain | IP
+_cas_head(){
+  local I=/etc/autoscript/ipinfo.json ip
+  ip=$(jq -r '.ip // "-"' $I 2>/dev/null)
+  echo "🖥 <b>CASSANOVA TUNNELING</b>"$'\n'"🌐 $(cat /etc/autoscript/domain 2>/dev/null) | $ip"
+}
+# kirim pesan Telegram (HTML). Baris baru pakai newline asli, bukan %0A.
+_cas_send(){
   local BOT_TOKEN CHAT_ID NOTIFY
+  [[ -f /etc/autoscript/bot ]] || return 0
   . /etc/autoscript/bot
   [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" || "$NOTIFY" != "on" ]] && return 0
-  local H; H="🖥 <b>CASSANOVA TUNNELING</b> | $(cat /etc/autoscript/domain 2>/dev/null)"
   ( curl -s --max-time 15 -o /dev/null \
       --data-urlencode "chat_id=$CHAT_ID" \
-      --data-urlencode "text=$H"$'\n'"$1" \
+      --data-urlencode "text=$(_cas_head)"$'\n'"$1" \
       --data-urlencode "parse_mode=HTML" \
       "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" ) >/dev/null 2>&1 &
-  disown 2>/dev/null
-  return 0
+  disown 2>/dev/null; return 0
 }
+# cas_notify "teks"      -> pesan singkat (event akun)
+cas_notify(){ _cas_send "$1"; }
+# cas_notify_raw "teks"  -> pesan panjang (akun penuh); sama-sama diberi header
+cas_notify_raw(){ _cas_send "$1"; }
 EOF
 
 

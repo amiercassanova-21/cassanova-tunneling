@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.8.1
+#  CASSANOVA TUNNELING - UPDATE v1.8.2
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -42,6 +42,7 @@ cat > /usr/local/lib/autoscript/lib.sh <<'EOF'
 # Cassanova Tunneling - shared library
 [[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
 type cas_notify &>/dev/null || cas_notify(){ :; }
+type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
 R='\e[31m'; G='\e[32m'; Y='\e[33m'; B='\e[34m'; C='\e[36m'; P='\e[35m'; W='\e[1;97m'; O='\e[38;5;208m'; N='\e[0m'
 BGB='\e[44m'; BG='\e[41m'
 CFG=/usr/local/etc/xray/config.json
@@ -287,8 +288,8 @@ mk_link(){ # net(ws|up|grpc) tls(1|0)  -> pakai variabel ID & REM
   echo "$PROTO://$ID@$DOMAIN:$port?$qs#$REM"
 }
 
-show_account(){ # user id exp
-  local ipl q CITY ISP L2="${B}────────────────────────────────────${N}"
+show_account(){ # user id exp  ; arg4 = notif (kirim juga ke Telegram)
+  local ipl q CITY ISP notif=$4 L2="${B}────────────────────────────────────${N}"
   REM=$1; ID=$2
   local exp=$3
   ipl=$(db_field $PROTO "$REM" 4); q=$(db_field $PROTO "$REM" 5)
@@ -296,6 +297,30 @@ show_account(){ # user id exp
   ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
   row(){ printf " ${G}%-14s${N}: %b\n" "$1" "$2"; }
   sec(){ echo -e "$L2"; printf "${Y}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$L2"; }
+  if [[ "$notif" == notif ]]; then
+    local NL="────────────────────────────────"
+    local body="<pre>Remarks   : $REM
+CITY      : $CITY
+ISP       : $ISP
+Domain    : $DOMAIN
+Port TLS  : 443,8443
+Port none : 80,8080
+Port any  : 2052,2053,8880
+id        : $ID
+Network   : ws,grpc,upgrade
+Path ws   : $WSPATH
+Service   : $PROTO-grpc
+Path up   : /up$PROTO
+Limit IP  : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")
+Kuota     : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
+Expired   : $exp</pre>"
+    body+=$'\n'"<b>$UP WS TLS</b>"$'\n'"<code>$(mk_link ws 1)</code>"
+    body+=$'\n'"<b>$UP WS NO TLS</b>"$'\n'"<code>$(mk_link ws 0)</code>"
+    body+=$'\n'"<b>$UP GRPC</b>"$'\n'"<code>$(mk_link grpc 1)</code>"
+    body+=$'\n'"<b>$UP Upgrade TLS</b>"$'\n'"<code>$(mk_link up 1)</code>"
+    body+=$'\n'"<b>$UP Upgrade NO TLS</b>"$'\n'"<code>$(mk_link up 0)</code>"
+    cas_notify_raw "🆕 <b>$UP Dibuat</b>"$'\n'"$body"
+  fi
   clear
   echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#UP}+8)/2 )) "$UP ACCOUNT"; echo -e "$LINE"
   row "Remarks" "${Y}$REM${N}"
@@ -378,8 +403,7 @@ create(){
   xray_add $PROTO "$u" "$id"
   rm -f $ASD/usage/$PROTO/$u
   unlock_db
-  cas_notify "🆕 <b>$UP Dibuat</b>"$'\n'"User: <code>$u</code>"$'\n'"Expired: $exp"$'\n'"Limit IP: $ipl | Kuota: ${q}GB"
-  show_account "$u" "$id" "$exp"; pause
+  show_account "$u" "$id" "$exp" notif; pause
 }
 
 trial(){
@@ -392,7 +416,7 @@ trial(){
   xray_add $PROTO "$u" "$id"
   unlock_db
   echo "/usr/local/sbin/m-xray $PROTO --delete $u" | at now + $m minutes >/dev/null 2>&1
-  show_account "$u" "$id" "$m menit"; pause
+  show_account "$u" "$id" "$m menit" notif; pause
 }
 
 delete(){
@@ -640,7 +664,7 @@ accounts(){
 
 version_box(){
   echo -e "    ${B}┌──────────────────────────────────────┐${N}"
-  printf  "    ${B}│${N} ${G}%-12s${N}: ${O}%s${N}\n" "Version" "$VER" "Brand" "$(brand_txt)" "Client Name" "$(hostname)" "Expiry In" "Lifetime"
+  printf  "    ${B}│${N} ${G}%-12s${N}: ${O}%s${N}\n" "Version" "$VER" "Client Name" "$(hostname)" "Expiry In" "Lifetime"
   echo -e "    ${B}└──────────────────────────────────────┘${N}"
 }
 
@@ -673,7 +697,6 @@ set_bantime(){
 if [[ "$1" == "info" ]]; then
   dashboard; accounts; version_box
   echo -e "\n          ${G}to access use ${C}menu${G} command${N}\n"
-  if [[ "$(cat $ASD/autoupdate 2>/dev/null)" == on ]]; then echo -e " ${G}Auto update : ON${N}\n"; fi
   exit 0
 fi
 
@@ -870,7 +893,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.8.1" > /etc/autoscript/version
+echo "v1.8.2" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----

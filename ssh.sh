@@ -141,6 +141,8 @@ cat > /usr/local/sbin/m-ssh <<'EOF'
 #!/bin/bash
 . /usr/local/lib/autoscript/lib.sh
 [[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
+type cas_notify &>/dev/null || cas_notify(){ :; }
+type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
 DB=$ASD/db/ssh.db
 TRASH=$ASD/db/ssh.trash
 DOMAIN=$(cat $ASD/domain)
@@ -178,8 +180,8 @@ ssh_expire(){
   awk -v l="$lim" 'NF && $1 !~ /trial/ && $NF>=l' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"
 }
 
-show_account(){ # user pass exp ipl
-  local u=$1 p=$2 exp=$3 ipl=$4 IP
+show_account(){ # user pass exp ipl [notif]
+  local u=$1 p=$2 exp=$3 ipl=$4 notif=$5 IP
   IP=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
   clear
   echo -e "$LINE"; echo -e "          ${G}SSH ACCOUNT${N}"; echo -e "$LINE"
@@ -194,6 +196,21 @@ show_account(){ # user pass exp ipl
   echo -e "$LINE"
   echo -e " ${G}Format OVPN/HTTP Custom:${N} $DOMAIN:22@$u:$p"
   echo -e "$LINE"
+  if [[ "$notif" == notif ]]; then
+    cas_notify_raw "🆕 <b>SSH Dibuat</b>"$'
+'"<pre>Username  : $u
+Password  : $p
+Domain    : $DOMAIN
+IP        : $IP
+OpenSSH   : 22
+Dropbear  : 143, 109
+SSH WS    : 80, 443 (/ssh-ws)
+BadVPN    : 7100-7900
+Limit IP  : $([[ "$ipl" == 0 ]] && echo Unlimited || echo "$ipl IP")
+Expired   : $exp</pre>"$'
+'"<b>Format HTTP Custom</b>"$'
+'"<code>$DOMAIN:22@$u:$p</code>"
+  fi
 }
 
 list_users(){ # $1 = all | active | inactive
@@ -245,8 +262,7 @@ create(){
   useradd -e "$exp" -s /bin/false -M "$u" 2>/dev/null
   echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
   lock_db; echo "$u $exp $ipl active" >> "$DB"; unlock_db
-  cas_notify "🆕 <b>SSH Dibuat</b>"$'\n'"User: <code>$u</code>"$'\n'"Expired: $exp"$'\n'"Limit IP: $ipl"
-  show_account "$u" "$p" "$exp" "$ipl"; pause
+  show_account "$u" "$p" "$exp" "$ipl" notif; pause
 }
 
 trial(){
@@ -258,7 +274,7 @@ trial(){
   useradd -s /bin/false -M "$u" 2>/dev/null; echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
   lock_db; echo "$u $exp 1 active" >> "$DB"; unlock_db
   echo "/usr/local/sbin/m-ssh ssh --delete $u" | at now + $m minutes >/dev/null 2>&1
-  show_account "$u" "$p" "$m menit" 1; pause
+  show_account "$u" "$p" "$m menit" 1 notif; pause
 }
 
 delete(){ pick_user || return; lock_db; ssh_remove "$U"; unlock_db; cas_notify "🗑 <b>SSH Dihapus</b>"$'\n'"User: <code>$U</code>"; echo -e "${G}User $U dihapus${N}"; pause; }

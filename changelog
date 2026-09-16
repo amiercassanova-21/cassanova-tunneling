@@ -1,4 +1,4 @@
-v1.8.1
-- Header depan tetap CASSANOVA TUNNELING
-- Set Brand Name ala Potato: brand untuk UUID/password & user trial (ON/OFF)
-- Pemberitahuan update di dashboard & Telegram dihapus (auto update tetap jalan)
+v1.8.2
+- Dashboard depan: brand & teks Auto Update dihilangkan (lebih bersih)
+- Notif create akun sekarang lengkap (akun penuh + semua link, bisa 1-klik salin di Telegram)
+- Notif create/renew/delete/lock/unlock diberi header server (domain + IP)
