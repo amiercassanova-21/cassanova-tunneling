@@ -55,33 +55,47 @@ fi
 echo -e "${GRN}[SSH 4/5] SSH WebSocket...${NC}"
 cat > /usr/local/bin/ws-ssh.py <<'PYEOF'
 #!/usr/bin/env python3
+# SSH WebSocket proxy - terima metode apa pun (GET/PATCH/HEAD dll) & path apa pun
 import socket, threading, select, sys
 LISTEN='127.0.0.1'; LPORT=int(sys.argv[1]) if len(sys.argv)>1 else 8088
 TARGET='127.0.0.1'; TPORT=143
 RESP=b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
 def handle(c):
+    s=None
     try:
-        c.recv(8192)
-        c.send(RESP)
-        s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); s.connect((TARGET,TPORT))
-        socks=[c,s]
+        c.settimeout(15)
+        c.recv(16384)
+        c.sendall(RESP)
+        c.settimeout(None)
+        s=socket.create_connection((TARGET,TPORT))
+        buf=b''; synced=False
         while True:
-            r,_,e=select.select(socks,[],socks,60)
-            if e: break
+            r,_,_=select.select([c,s],[],[])
             for x in r:
-                d=x.recv(8192)
-                if not d: raise Exception()
-                (s if x is c else c).sendall(d)
-    except: pass
+                d=x.recv(16384)
+                if not d: return
+                if x is c:
+                    if not synced:
+                        # buang sisa payload (mis. split "HTTP/ 1") sampai data SSH dimulai
+                        buf+=d; i=buf.find(b'SSH-')
+                        if i<0:
+                            if len(buf)>65536: return
+                            continue
+                        d=buf[i:]; buf=b''; synced=True
+                    s.sendall(d)
+                else:
+                    c.sendall(d)
+    except Exception:
+        pass
     finally:
-        try: c.close()
-        except: pass
-        try: s.close()
-        except: pass
+        for x in (c,s):
+            try:
+                if x: x.close()
+            except Exception: pass
 def main():
     srv=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-    srv.bind((LISTEN,LPORT)); srv.listen(200)
+    srv.bind((LISTEN,LPORT)); srv.listen(500)
     while True:
         c,_=srv.accept(); threading.Thread(target=handle,args=(c,),daemon=True).start()
 main()
@@ -104,6 +118,11 @@ NG=/etc/nginx/conf.d/xray.conf
 if [[ -f $NG ]] && ! grep -q "ssh-ws" $NG; then
   sed -i '/# ---- WebSocket ----/i\    location = /ssh-ws { proxy_pass http://127.0.0.1:8088; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 3600s; }' $NG
   nginx -t >/dev/null 2>&1 && systemctl reload nginx
+fi
+# path "/" (dan path lain yang tidak dipakai Xray) + header Upgrade websocket -> SSH WS
+if [[ -f $NG ]] && ! grep -q "cas-ssh-root" $NG; then
+  sed -i '/# ---- WebSocket ----/i\    location / { # cas-ssh-root\n        if ($http_upgrade ~* "websocket") { proxy_pass http://127.0.0.1:8088; }\n    }' $NG
+  if nginx -t >/dev/null 2>&1; then systemctl reload nginx; else sed -i '/cas-ssh-root/,+2d' $NG; nginx -t && systemctl reload nginx; fi
 fi
 
 # ---------- Menu SSH ----------
@@ -156,7 +175,8 @@ show_account(){ # user pass exp ipl
     "Limit IP" "$([[ "$ipl" == 0 ]] && echo Unlimited || echo "$ipl IP")" "Expired On" "$exp"
   echo -e "$LINE"
   echo -e " ${G}Payload WS (contoh):${N}"
-  echo -e " GET /ssh-ws HTTP/1.1[crlf]Host: $DOMAIN[crlf]Upgrade: websocket[crlf][crlf]"
+  echo -e " GET / HTTP/1.1[crlf]Host: $DOMAIN[crlf]Upgrade: websocket[crlf][crlf]"
+  echo -e " ${G}Path WS :${N} / atau /ssh-ws (metode GET/PATCH, header Upgrade: websocket)"
   echo -e "$LINE"
   echo -e " ${G}Format OVPN/HTTP Custom:${N} $DOMAIN:22@$u:$p"
   echo -e "$LINE"
