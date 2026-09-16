@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.2.1
+#  CASSANOVA TUNNELING - UPDATE v1.3.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -51,14 +51,16 @@ make_client(){
 }
 
 # Tambah user ke config + Xray yang sedang jalan (tanpa restart)
-xray_add(){ # proto user id
-  local tag="$1-ws" c
+xray_add(){ # proto user id  (ws + grpc + httpupgrade)
+  local p=$1 e="$1.$2" c t
   c=$(make_client "$1" "$2" "$3")
-  jq --arg t "$tag" --arg e "$1.$2" --argjson c "$c" \
-    '(.inbounds[]|select(.tag==$t).settings.clients) |= (map(select(.email!=$e)) + [$c])' \
+  jq --arg p "$p-" --arg e "$e" --argjson c "$c" \
+    '(.inbounds[]|select(.tag|startswith($p)).settings.clients) |= (map(select(.email!=$e)) + [$c])' \
     $CFG > $CFG.tmp && mv $CFG.tmp $CFG
-  jq --arg t "$tag" --argjson c "$c" '{inbounds:[.inbounds[]|select(.tag==$t)|.settings.clients=[$c]]}' $CFG > /tmp/cas-adu.json
-  xray api rmu --server=$API -tag="$tag" "$1.$2" >/dev/null 2>&1
+  jq --arg p "$p-" --argjson c "$c" '{inbounds:[.inbounds[]|select(.tag|startswith($p))|.settings.clients=[$c]]}' $CFG > /tmp/cas-adu.json
+  for t in $(jq -r --arg p "$p-" '.inbounds[]|select(.tag|startswith($p))|.tag' $CFG); do
+    xray api rmu --server=$API -tag="$t" "$e" >/dev/null 2>&1
+  done
   if ! xray api adu --server=$API /tmp/cas-adu.json >/dev/null 2>&1; then
     systemctl restart xray
   fi
@@ -67,13 +69,14 @@ xray_add(){ # proto user id
 
 # Hapus user dari config + Xray yang sedang jalan (tanpa restart)
 xray_del(){ # proto user
-  local tag="$1-ws" had
-  had=$(jq --arg t "$tag" --arg e "$1.$2" '[.inbounds[]|select(.tag==$t).settings.clients[]|select(.email==$e)]|length' $CFG)
-  jq --arg t "$tag" --arg e "$1.$2" '(.inbounds[]|select(.tag==$t).settings.clients) |= map(select(.email!=$e))' \
+  local p=$1 e="$1.$2" t had fail=0
+  had=$(jq -r --arg p "$p-" --arg e "$e" '[.inbounds[]|select(.tag|startswith($p))|select(any(.settings.clients[]?; .email==$e))|.tag]|join(" ")' $CFG)
+  jq --arg p "$p-" --arg e "$e" '(.inbounds[]|select(.tag|startswith($p)).settings.clients) |= map(select(.email!=$e))' \
     $CFG > $CFG.tmp && mv $CFG.tmp $CFG
-  if [[ "$had" -gt 0 ]]; then
-    xray api rmu --server=$API -tag="$tag" "$1.$2" >/dev/null 2>&1 || systemctl restart xray
-  fi
+  for t in $had; do
+    xray api rmu --server=$API -tag="$t" "$e" >/dev/null 2>&1 || fail=1
+  done
+  [[ $fail == 1 ]] && systemctl restart xray
 }
 
 remove_account(){ # proto user  -> pindah ke trash (bisa di-recovery)
@@ -214,38 +217,63 @@ st_label(){
   esac
 }
 
-show_account(){ # user id exp
-  local u=$1 id=$2 exp=$3 tls ntls j1 j2 ipl q
-  ipl=$(db_field $PROTO "$u" 4); q=$(db_field $PROTO "$u" 5)
-  case $PROTO in
-    vless)
-      tls="vless://$id@$DOMAIN:443?encryption=none&security=tls&type=ws&host=$DOMAIN&sni=$DOMAIN&path=%2Fvless#$u"
-      ntls="vless://$id@$DOMAIN:80?encryption=none&security=none&type=ws&host=$DOMAIN&path=%2Fvless#$u" ;;
-    vmess)
-      j1=$(jq -nc --arg ps "$u" --arg a "$DOMAIN" --arg id "$id" --arg p "$WSPATH" '{v:"2",ps:$ps,add:$a,port:"443",id:$id,aid:"0",scy:"auto",net:"ws",type:"none",host:$a,path:$p,tls:"tls",sni:$a}')
-      j2=$(jq -nc --arg ps "$u" --arg a "$DOMAIN" --arg id "$id" --arg p "$WSPATH" '{v:"2",ps:$ps,add:$a,port:"80",id:$id,aid:"0",scy:"auto",net:"ws",type:"none",host:$a,path:$p,tls:""}')
-      tls="vmess://$(echo -n "$j1" | base64 -w0)"
-      ntls="vmess://$(echo -n "$j2" | base64 -w0)" ;;
-    trojan)
-      tls="trojan://$id@$DOMAIN:443?security=tls&type=ws&host=$DOMAIN&sni=$DOMAIN&path=%2Ftrojan-ws#$u"
-      ntls="trojan://$id@$DOMAIN:80?security=none&type=ws&host=$DOMAIN&path=%2Ftrojan-ws#$u" ;;
+mk_link(){ # net(ws|up|grpc) tls(1|0)  -> pakai variabel ID & REM
+  local port sec path t qs j tlsv
+  [[ $2 == 1 ]] && { port=443; sec=tls; tlsv=tls; } || { port=80; sec=none; tlsv=""; }
+  case $1 in
+    ws)   t=ws;          path=$WSPATH ;;
+    up)   t=httpupgrade; path="/up$PROTO" ;;
+    grpc) t=grpc;        path="$PROTO-grpc" ;;
   esac
+  if [[ $PROTO == vmess ]]; then
+    j=$(jq -nc --arg ps "$REM" --arg a "$DOMAIN" --arg id "$ID" --arg port "$port" --arg net "$t" --arg p "$path" \
+         --arg tls "$tlsv" --arg ty "$([[ $1 == grpc ]] && echo gun || echo none)" \
+         '{v:"2",ps:$ps,add:$a,port:$port,id:$id,aid:"0",scy:"auto",net:$net,type:$ty,host:$a,path:$p,tls:$tls,sni:(if $tls=="tls" then $a else "" end)}')
+    echo "vmess://$(echo -n "$j" | base64 -w0)"; return
+  fi
+  if [[ $1 == grpc ]]; then
+    qs="mode=gun&security=$sec"; [[ $PROTO == vless ]] && qs+="&encryption=none"; qs+="&type=grpc&serviceName=$path"
+  else
+    qs="path=${path//\//%2F}&security=$sec"; [[ $PROTO == vless ]] && qs+="&encryption=none"; qs+="&host=$DOMAIN&type=$t"
+  fi
+  [[ $2 == 1 ]] && qs+="&sni=$DOMAIN"
+  echo "$PROTO://$ID@$DOMAIN:$port?$qs#$REM"
+}
+
+show_account(){ # user id exp
+  local ipl q CITY ISP L2="${B}────────────────────────────────────${N}"
+  REM=$1; ID=$2
+  local exp=$3
+  ipl=$(db_field $PROTO "$REM" 4); q=$(db_field $PROTO "$REM" 5)
+  CITY=$(jq -r '.city // "-"' $ASD/ipinfo.json 2>/dev/null)
+  ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
+  row(){ printf " ${G}%-14s${N}: %b\n" "$1" "$2"; }
+  sec(){ echo -e "$L2"; printf "${Y}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$L2"; }
   clear
-  echo -e "$LINE"; echo -e "          ${G}$UP ACCOUNT${N}"; echo -e "$LINE"
-  echo -e " Remarks   : ${Y}$u${N}"
-  echo -e " Domain    : $DOMAIN"
-  echo -e " Port TLS  : 443"
-  echo -e " Port HTTP : 80"
-  echo -e " ID/Pass   : $id"
-  echo -e " Network   : ws"
-  echo -e " Path      : $WSPATH"
-  echo -e " Limit IP  : $([[ "$ipl" == 0 ]] && echo Unlimited || echo "$ipl IP")"
-  echo -e " Kuota     : $([[ "$q" == 0 ]] && echo Unlimited || echo "$q GB")"
-  echo -e " Expired   : ${Y}$exp${N}"
-  echo -e "$LINE"
-  echo -e " ${G}Link TLS :${N}\n$tls\n"
-  echo -e " ${G}Link HTTP :${N}\n$ntls"
-  echo -e "$LINE"
+  echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#UP}+8)/2 )) "$UP ACCOUNT"; echo -e "$LINE"
+  row "Remarks" "${Y}$REM${N}"
+  row "CITY" "$CITY"
+  row "ISP" "$ISP"
+  row "Domain" "$DOMAIN"
+  row "Port TLS" "443,8443"
+  row "Port none TLS" "80,8080"
+  row "Port any" "2052,2053,8880"
+  if [[ $PROTO == trojan ]]; then row "Password" "$ID"; else row "id" "$ID"; fi
+  [[ $PROTO == vless ]] && row "Encryption" "none"
+  [[ $PROTO == vmess ]] && { row "alterId" "0"; row "Security" "auto"; }
+  row "Network" "ws,grpc,upgrade"
+  row "Path ws" "$WSPATH"
+  row "serviceName" "$PROTO-grpc"
+  row "Path upgrade" "/up$PROTO"
+  row "Limit IP" "$([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")"
+  row "Kuota" "$([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")"
+  row "Expired On" "${Y}$exp${N}"
+  sec "$UP WS TLS";          mk_link ws 1
+  sec "$UP WS NO TLS";       mk_link ws 0
+  sec "$UP GRPC";            mk_link grpc 1
+  sec "$UP Upgrade TLS";     mk_link up 1
+  sec "$UP Upgrade NO TLS";  mk_link up 0
+  echo -e "$L2"
 }
 
 list_users(){
@@ -668,11 +696,73 @@ done
 find /etc/autoscript/usage -maxdepth 1 -type f -delete 2>/dev/null
 mkdir -p /etc/autoscript/usage/vless /etc/autoscript/usage/vmess /etc/autoscript/usage/trojan
 
-NG=/etc/nginx/conf.d/xray.conf
-if [[ -f $NG ]] && ! grep -q "X-Forwarded-For" $NG; then
-  sed -i '/proxy_set_header Host \$host;/a\        proxy_set_header X-Forwarded-For $remote_addr;' $NG
+# tambah inbound gRPC & HTTPUpgrade (salin user dari inbound ws)
+jq '
+  reduce ["vless","vmess","trojan"][] as $p (.;
+    ([.inbounds[]|select(.tag==($p+"-ws"))][0]) as $w
+    | (if $p=="vless" then 0 elif $p=="vmess" then 1 else 2 end) as $i
+    | (if any(.inbounds[]; .tag==($p+"-grpc")) then . else
+        .inbounds += [ $w | .tag=($p+"-grpc") | .port=(10011+$i)
+                         | .streamSettings={network:"grpc",grpcSettings:{serviceName:($p+"-grpc")}} ] end)
+    | (if any(.inbounds[]; .tag==($p+"-up")) then . else
+        .inbounds += [ $w | .tag=($p+"-up") | .port=(10021+$i)
+                         | .streamSettings={network:"httpupgrade",httpupgradeSettings:{path:("/up"+$p)}} ] end)
+  )' $CFG > $CFG.tmp && mv $CFG.tmp $CFG
+
+DOMAIN=$(cat /etc/autoscript/domain)
+cp -f /etc/nginx/conf.d/xray.conf /root/xray.conf.bak 2>/dev/null
+cat > /etc/nginx/conf.d/xray.conf <<'NGX'
+map $http_upgrade $cas_conn { default upgrade; '' close; }
+server {
+    listen 80;         listen [::]:80;
+    listen 8080;       listen [::]:8080;
+    listen 2052;       listen [::]:2052;
+    listen 8880;       listen [::]:8880;
+    listen 443 ssl http2;  listen [::]:443 ssl http2;
+    listen 8443 ssl http2; listen [::]:8443 ssl http2;
+    listen 2053 ssl http2; listen [::]:2053 ssl http2;
+    server_name DOMAIN_HERE;
+
+    ssl_certificate     /etc/autoscript/xray.crt;
+    ssl_certificate_key /etc/autoscript/xray.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    root /var/www/html;
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $cas_conn;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
+    # ---- WebSocket ----
+    location = /vless     { if ($http_upgrade != "websocket") { return 404; } proxy_pass http://127.0.0.1:10001; }
+    location = /vmess     { if ($http_upgrade != "websocket") { return 404; } proxy_pass http://127.0.0.1:10002; }
+    location = /trojan-ws { if ($http_upgrade != "websocket") { return 404; } proxy_pass http://127.0.0.1:10003; }
+
+    # ---- HTTPUpgrade ----
+    location = /upvless   { proxy_pass http://127.0.0.1:10021; }
+    location = /upvmess   { proxy_pass http://127.0.0.1:10022; }
+    location = /uptrojan  { proxy_pass http://127.0.0.1:10023; }
+
+    # ---- gRPC ----
+    location ^~ /vless-grpc  { grpc_pass grpc://127.0.0.1:10011; grpc_set_header X-Real-IP $remote_addr; grpc_read_timeout 3600s; grpc_send_timeout 3600s; client_max_body_size 0; }
+    location ^~ /vmess-grpc  { grpc_pass grpc://127.0.0.1:10012; grpc_set_header X-Real-IP $remote_addr; grpc_read_timeout 3600s; grpc_send_timeout 3600s; client_max_body_size 0; }
+    location ^~ /trojan-grpc { grpc_pass grpc://127.0.0.1:10013; grpc_set_header X-Real-IP $remote_addr; grpc_read_timeout 3600s; grpc_send_timeout 3600s; client_max_body_size 0; }
+}
+NGX
+sed -i "s/DOMAIN_HERE/$DOMAIN/" /etc/nginx/conf.d/xray.conf
+if nginx -t >/dev/null 2>&1; then
+  systemctl restart nginx
+else
+  echo -e "${RED}Config Nginx baru error, dikembalikan ke config lama:${NC}"; nginx -t
+  cp -f /root/xray.conf.bak /etc/nginx/conf.d/xray.conf && systemctl restart nginx
 fi
-nginx -t >/dev/null 2>&1 && systemctl reload nginx
+
+# perpanjangan SSL otomatis lewat webroot (nginx tidak perlu dimatikan)
+ACF=/root/.acme.sh/${DOMAIN}_ecc/${DOMAIN}.conf
+[[ -f $ACF ]] && sed -i "s#^Le_Webroot=.*#Le_Webroot='/var/www/html'#" $ACF
 
 cat > /etc/logrotate.d/xray <<'EOF'
 /var/log/xray/*.log {
@@ -696,7 +786,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.2.1" > /etc/autoscript/version
+echo "v1.3.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 if xray run -test -config $CFG >/dev/null 2>&1; then
   systemctl restart xray
