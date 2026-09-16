@@ -130,6 +130,7 @@ echo -e "${GRN}[SSH 5/5] Menu SSH...${NC}"
 cat > /usr/local/sbin/m-ssh <<'EOF'
 #!/bin/bash
 . /usr/local/lib/autoscript/lib.sh
+[[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
 DB=$ASD/db/ssh.db
 TRASH=$ASD/db/ssh.trash
 DOMAIN=$(cat $ASD/domain)
@@ -159,8 +160,11 @@ ssh_remove(){ # user -> trash + hapus akun sistem
   rm -f $ASD/usage/ssh/$u
 }
 ssh_expire(){
-  local today u exp lim; today=$(date +%F); lim=$(date -d "-120 days" +%F)
-  while read -r u exp _; do [[ -n "$u" && "$exp" < "$today" ]] && ssh_remove "$u"; done < <(cat "$DB")
+  local today u exp lim list=""; today=$(date +%F); lim=$(date -d "-120 days" +%F)
+  while read -r u exp _; do
+    if [[ -n "$u" && "$exp" < "$today" ]]; then ssh_remove "$u"; [[ "$u" != trial* ]] && list+="• SSH <code>$u</code> (exp $exp)"$'\n'; fi
+  done < <(cat "$DB")
+  [[ -n "$list" ]] && cas_notify "⏰ <b>Akun Expired</b> (masuk Recovery)"$'\n'"$list"
   awk -v l="$lim" 'NF && $1 !~ /^trial/ && $NF>=l' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"
 }
 
@@ -231,6 +235,7 @@ create(){
   useradd -e "$exp" -s /bin/false -M "$u" 2>/dev/null
   echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
   lock_db; echo "$u $exp $ipl active" >> "$DB"; unlock_db
+  cas_notify "🆕 <b>SSH Dibuat</b>"$'\n'"User: <code>$u</code>"$'\n'"Expired: $exp"$'\n'"Limit IP: $ipl"
   show_account "$u" "$p" "$exp" "$ipl"; pause
 }
 
@@ -245,7 +250,7 @@ trial(){
   show_account "$u" "$p" "$m menit" 1; pause
 }
 
-delete(){ pick_user || return; lock_db; ssh_remove "$U"; unlock_db; echo -e "${G}User $U dihapus${N}"; pause; }
+delete(){ pick_user || return; lock_db; ssh_remove "$U"; unlock_db; cas_notify "🗑 <b>SSH Dihapus</b>"$'\n'"User: <code>$U</code>"; echo -e "${G}User $U dihapus${N}"; pause; }
 
 renew(){
   local d base today new
@@ -256,6 +261,7 @@ renew(){
   lock_db; sset "$U" 2 "$new"; chage -E "$(date -d "$new" +%Y-%m-%d)" "$U" 2>/dev/null
   usermod -U "$U" 2>/dev/null; [[ "$(sf "$U" 4)" != active ]] && sset "$U" 4 active
   unlock_db
+  cas_notify "🔄 <b>SSH Diperpanjang</b>"$'\n'"User: <code>$U</code>"$'\n'"+$d hari → $new"
   echo -e "${G}User $U diperpanjang sampai $new${N}"; pause
 }
 
@@ -279,11 +285,11 @@ check_login(){
   echo -e "$LINE"; pause
 }
 
-lock_user(){ pick_user active || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db; echo -e "${G}User $U dikunci${N}"; pause; }
+lock_user(){ pick_user active || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db; cas_notify "🔒 <b>SSH Dikunci</b>"$'\n'"User: <code>$U</code>"; echo -e "${G}User $U dikunci${N}"; pause; }
 unlock_user(){
   pick_user inactive || return
   [[ "$(sf "$U" 2)" < "$(date +%F)" ]] && { msg "${R}Akun expired, gunakan Renew${N}"; return; }
-  lock_db; usermod -U "$U" 2>/dev/null; sset "$U" 4 active; unlock_db; echo -e "${G}User $U dibuka${N}"; pause
+  lock_db; usermod -U "$U" 2>/dev/null; sset "$U" 4 active; unlock_db; cas_notify "🔓 <b>SSH Dibuka</b>"$'\n'"User: <code>$U</code>"; echo -e "${G}User $U dibuka${N}"; pause
 }
 
 recovery(){
@@ -305,6 +311,7 @@ recovery(){
   new=$(date -d "+$d days" +%F)
   useradd -e "$new" -s /bin/false -M "$u" 2>/dev/null; echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
   lock_db; echo "$u $new $ipl active" >> "$DB"; awk -v u="$u" '$1!=u' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"; unlock_db
+  cas_notify "♻️ <b>SSH Dipulihkan</b>"$'\n'"User: <code>$u</code>"$'\n'"Expired: $new"
   show_account "$u" "$p" "$new" "$ipl"; pause
 }
 
@@ -362,6 +369,7 @@ chmod +x /usr/local/sbin/m-ssh
 cat > /usr/local/lib/autoscript/ssh-guard.sh <<'EOF'
 #!/bin/bash
 . /usr/local/lib/autoscript/lib.sh
+[[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
 DB=$ASD/db/ssh.db
 [[ -f $DB ]] || exit 0
 BANMIN=$(cat $ASD/bantime 2>/dev/null || echo 15)
@@ -375,7 +383,8 @@ while read -r u exp ipl st; do
   fi
   [[ "$st" != active || ! "$ipl" =~ ^[0-9]+$ || "$ipl" -eq 0 ]] && continue
   n=$(ps aux | grep -E "sshd:|dropbear" | grep -v grep | grep -oE "$u@|$u\b" | wc -l)
-  if (( n > ipl )); then usermod -L "$u" 2>/dev/null; pkill -u "$u" 2>/dev/null; sset "$u" 4 "banned:$(( now + BANMIN*60 ))"; fi
+  if (( n > ipl )); then usermod -L "$u" 2>/dev/null; pkill -u "$u" 2>/dev/null; sset "$u" 4 "banned:$(( now + BANMIN*60 ))"
+    cas_notify "🚫 <b>Multi Login</b>"$'\n'"SSH <code>$u</code> $n sesi (limit $ipl)"$'\n'"Banned ${BANMIN} menit"; fi
 done < <(cat "$DB")
 EOF
 chmod +x /usr/local/lib/autoscript/ssh-guard.sh

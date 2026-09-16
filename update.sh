@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.5.0
+#  CASSANOVA TUNNELING - UPDATE v1.6.1
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -22,6 +22,8 @@ mkdir -p /usr/local/lib/autoscript /etc/autoscript/db /etc/autoscript/usage /var
 echo -e "${GRN}[2/7] Library...${NC}"
 cat > /usr/local/lib/autoscript/lib.sh <<'EOF'
 # Cassanova Tunneling - shared library
+[[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
+type cas_notify &>/dev/null || cas_notify(){ :; }
 R='\e[31m'; G='\e[32m'; Y='\e[33m'; B='\e[34m'; C='\e[36m'; P='\e[35m'; W='\e[1;97m'; O='\e[38;5;208m'; N='\e[0m'
 BGB='\e[44m'; BG='\e[41m'
 CFG=/usr/local/etc/xray/config.json
@@ -99,14 +101,18 @@ trash_prune(){
 }
 
 expire_all(){
-  local today p u exp
+  local today p u exp list=""
   today=$(date +%F)
   for p in $PROTOS; do
     while read -r u exp _; do
-      [[ -n "$u" && "$exp" < "$today" ]] && remove_account $p "$u"
+      if [[ -n "$u" && "$exp" < "$today" ]]; then
+        remove_account $p "$u"
+        [[ "$u" != trial* ]] && list+="• ${p^^} <code>$u</code> (exp $exp)"$'\n'
+      fi
     done < <(cat $ASD/db/$p.db)
   done
   trash_prune
+  [[ -n "$list" ]] && cas_notify "⏰ <b>Akun Expired</b> (masuk Recovery)"$'\n'"$list"
 }
 
 # Kumpulkan pemakaian bandwidth per user (byte) dari Xray stats
@@ -162,13 +168,15 @@ for p in $PROTOS; do
     # kuota bandwidth
     if [[ "$q" =~ ^[0-9]+$ ]] && (( q > 0 )); then
       used=$(usage_get $p "$u")
-      if (( used >= q * 1073741824 )); then xray_del $p "$u"; db_set $p "$u" 6 quota; continue; fi
+      if (( used >= q * 1073741824 )); then xray_del $p "$u"; db_set $p "$u" 6 quota
+        cas_notify "📛 <b>Kuota Habis</b>"$'\n'"${p^^} <code>$u</code> (${q}GB) dikunci"; continue; fi
     fi
     # limit IP
     if [[ "$ipl" =~ ^[0-9]+$ ]] && (( ipl > 0 )); then
       n=$(echo "$COUNTS" | awk -v u="$p.$u" '$1==u{print $2}')
       if [[ -n "$n" ]] && (( n > ipl )); then
         xray_del $p "$u"; db_set $p "$u" 6 "banned:$(( now + BANMIN*60 ))"
+        cas_notify "🚫 <b>Multi Login</b>"$'\n'"${p^^} <code>$u</code> pakai $n IP (limit $ipl)"$'\n'"Banned ${BANMIN} menit"
       fi
     fi
   done < <(cat $ASD/db/$p.db)
@@ -188,6 +196,7 @@ echo -e "${GRN}[3/7] Menu VLESS/VMESS/TROJAN...${NC}"
 cat > /usr/local/sbin/m-xray <<'EOF'
 #!/bin/bash
 . /usr/local/lib/autoscript/lib.sh
+[[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
 PROTO=$1
 case $PROTO in vless|vmess|trojan) ;; *) echo "Usage: m-xray vless|vmess|trojan"; exit 1 ;; esac
 DB=$ASD/db/$PROTO.db
@@ -331,6 +340,7 @@ create(){
   xray_add $PROTO "$u" "$id"
   rm -f $ASD/usage/$PROTO/$u
   unlock_db
+  cas_notify "🆕 <b>$UP Dibuat</b>"$'\n'"User: <code>$u</code>"$'\n'"Expired: $exp"$'\n'"Limit IP: $ipl | Kuota: ${q}GB"
   show_account "$u" "$id" "$exp"; pause
 }
 
@@ -350,6 +360,7 @@ trial(){
 delete(){
   pick_user || return
   lock_db; remove_account $PROTO "$U"; unlock_db
+  cas_notify "🗑 <b>$UP Dihapus</b>"$'\n'"User: <code>$U</code>"
   echo -e "${G}User $U dihapus (bisa dipulihkan lewat Recovery)${N}"; pause
 }
 
@@ -366,6 +377,7 @@ renew(){
   st=$(db_field $PROTO "$U" 6)
   if [[ "$st" == "quota" ]]; then xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"; db_set $PROTO "$U" 6 active; fi
   unlock_db
+  cas_notify "🔄 <b>$UP Diperpanjang</b>"$'\n'"User: <code>$U</code>"$'\n'"+$d hari → $new"
   echo -e "${G}User $U diperpanjang sampai $new (pemakaian kuota di-reset)${N}"; pause
 }
 
@@ -406,6 +418,7 @@ lock_user(){
   [[ "$(db_field $PROTO "$U" 6)" == "active" ]] && xray_del $PROTO "$U"
   db_set $PROTO "$U" 6 locked
   unlock_db
+  cas_notify "🔒 <b>$UP Dikunci</b>"$'\n'"User: <code>$U</code>"
   echo -e "${G}User $U dikunci${N}"; pause
 }
 
@@ -420,6 +433,7 @@ unlock_user(){
   xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"
   db_set $PROTO "$U" 6 active
   unlock_db
+  cas_notify "🔓 <b>$UP Dibuka</b>"$'\n'"User: <code>$U</code>"
   echo -e "${G}User $U dibuka kembali${N}"; pause
 }
 
@@ -451,6 +465,7 @@ recovery(){
   awk -v u="$u" '$1!=u' "$TRASH" > "$TRASH.tmp" && mv "$TRASH.tmp" "$TRASH"
   xray_add $PROTO "$u" "$id"
   unlock_db
+  cas_notify "♻️ <b>$UP Dipulihkan</b>"$'\n'"User: <code>$u</code>"$'\n'"Expired: $new"
   show_account "$u" "$id" "$new"; pause
 }
 
@@ -639,7 +654,7 @@ while true; do
     2) m-xray vmess ;;
     3) m-xray vless ;;
     4) m-xray trojan ;;
-    5) coming ;;
+    5) m-bot ;;
     6) m-feature ;;
     8) m-brand ;;
     7) set_bantime ;;
@@ -799,7 +814,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.5.0" > /etc/autoscript/version
+echo "v1.6.1" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----
@@ -809,6 +824,10 @@ wget -qO /root/ssh.sh https://raw.githubusercontent.com/amiercassanova-21/cassan
 # ---- Modul Features + Brand Name ----
 echo -e "${GRN}[FEATURES] Memasang modul Features & Brand Name...${NC}"
 wget -qO /root/features.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/features.sh && bash /root/features.sh; rm -f /root/features.sh
+
+# ---- Modul Setup Bot ----
+echo -e "${GRN}[BOT] Memasang modul Setup Bot...${NC}"
+wget -qO /root/bot.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/bot.sh && bash /root/bot.sh; rm -f /root/bot.sh
 if xray run -test -config $CFG >/dev/null 2>&1; then
   systemctl restart xray
 else
