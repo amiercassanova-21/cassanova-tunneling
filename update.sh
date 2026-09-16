@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.2.0
+#  CASSANOVA TUNNELING - UPDATE v1.2.1
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -386,7 +386,7 @@ unlock_user(){
 }
 
 recovery(){
-  local i=0 u exp id ipl q st del d new line inp names=()
+  local i=0 u exp id ipl q st del d new line inp v names=()
   header "RECOVERY $UP"
   printf " ${G}%-3s %-16s %-12s${N}\n" "NO" "USERNAME" "DIHAPUS"
   while read -r u exp id ipl q st del; do
@@ -402,11 +402,14 @@ recovery(){
   line=$(awk -v u="$u" '$1==u' "$TRASH" | tail -n1)
   [[ -z "$line" ]] && { msg "${R}User tidak ada di recovery${N}"; return; }
   user_exists $PROTO "$u" && { msg "${R}Username $u masih aktif di $UP. Hapus/ubah akun itu dulu.${N}"; return; }
-  read -rp "Masa aktif baru (hari) : " d; num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
-  new=$(date -d "+$d days" +%F)
   read -r u exp id ipl q st del <<< "$line"
+  ipl=${ipl:-0}; q=${q:-0}
+  read -rp "Masa aktif baru (hari) : " d; num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
+  read -rp "Limit IP (0 = unlimited) [$ipl] : " v; v=${v:-$ipl}; num_ok "$v" || { msg "${R}Harus angka${N}"; return; }; ipl=$v
+  read -rp "Kuota GB (0 = unlimited) [$q] : " v;   v=${v:-$q};   num_ok "$v" || { msg "${R}Harus angka${N}"; return; }; q=$v
+  new=$(date -d "+$d days" +%F)
   lock_db
-  echo "$u $new $id ${ipl:-0} ${q:-0} active" >> "$DB"
+  echo "$u $new $id $ipl $q active" >> "$DB"
   awk -v u="$u" '$1!=u' "$TRASH" > "$TRASH.tmp" && mv "$TRASH.tmp" "$TRASH"
   xray_add $PROTO "$u" "$id"
   unlock_db
@@ -693,7 +696,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.2.0" > /etc/autoscript/version
+echo "v1.2.1" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 if xray run -test -config $CFG >/dev/null 2>&1; then
   systemctl restart xray
