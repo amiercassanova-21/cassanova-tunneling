@@ -1,0 +1,5 @@
+v1.8.0
+- Auto update (pilihan ON/OFF), notifikasi update ke Telegram
+- Update tidak memutus koneksi user (restart hanya bila perlu, ditunda ke 04:00 saat auto update)
+- Rollback otomatis jika update gagal
+- Channel uji coba (beta) khusus owner

@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.7.0
+#  CASSANOVA TUNNELING - UPDATE v1.8.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -9,6 +9,24 @@
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
+
+# ---- channel & snapshot (untuk update tanpa putus koneksi) ----
+BRANCH=$(cat /etc/autoscript/channel 2>/dev/null); BRANCH=${BRANCH:-main}
+BASE=https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/$BRANCH
+export CAS_BASE=$BASE
+XCFG=/usr/local/etc/xray/config.json
+H_XRAY_OLD=$(md5sum $XCFG 2>/dev/null | cut -d' ' -f1)
+H_NGX_OLD=$(cat /etc/nginx/conf.d/*.conf 2>/dev/null | md5sum | cut -d' ' -f1)
+# restart aman: saat auto update, restart yang memutus koneksi ditunda ke jam 04:00
+svc_restart(){
+  if [[ "$CAS_AUTO" == 1 ]] && systemctl is-active --quiet "$1"; then
+    echo "systemctl restart $1" | at 04:00 >/dev/null 2>&1
+    echo "$1" >> /etc/autoscript/pending-restart
+  else
+    systemctl restart "$1"
+  fi
+}
+export -f svc_restart
 
 echo -e "${GRN}[1/7] Paket tambahan...${NC}"
 export DEBIAN_FRONTEND=noninteractive
@@ -788,10 +806,10 @@ server {
 NGX
 sed -i "s/DOMAIN_HERE/$DOMAIN/" /etc/nginx/conf.d/xray.conf
 if nginx -t >/dev/null 2>&1; then
-  systemctl restart nginx
+  systemctl reload nginx
 else
   echo -e "${RED}Config Nginx baru error, dikembalikan ke config lama:${NC}"; nginx -t
-  cp -f /root/xray.conf.bak /etc/nginx/conf.d/xray.conf && systemctl restart nginx
+  cp -f /root/xray.conf.bak /etc/nginx/conf.d/xray.conf && systemctl reload nginx
 fi
 
 # IP asli pelanggan saat lewat Cloudflare (tanpa ini yang tercatat IP server Cloudflare)
@@ -832,23 +850,28 @@ chmod 644 /etc/cron.d/autoscript
 # =====================================================
 #  SELESAI
 # =====================================================
-echo -e "${GRN}[7/7] Restart Xray (sekali ini saja)...${NC}"
-echo "v1.7.0" > /etc/autoscript/version
+echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
+echo "v1.8.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----
 echo -e "${GRN}[SSH] Memasang modul SSH...${NC}"
-wget -qO /root/ssh.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/ssh.sh && bash /root/ssh.sh; rm -f /root/ssh.sh
+wget -qO /root/ssh.sh "$BASE/ssh.sh?t=$(date +%s)" && bash /root/ssh.sh; rm -f /root/ssh.sh
 
 # ---- Modul Features + Brand Name ----
 echo -e "${GRN}[FEATURES] Memasang modul Features & Brand Name...${NC}"
-wget -qO /root/features.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/features.sh && bash /root/features.sh; rm -f /root/features.sh
+wget -qO /root/features.sh "$BASE/features.sh?t=$(date +%s)" && bash /root/features.sh; rm -f /root/features.sh
 
 # ---- Modul Setup Bot ----
 echo -e "${GRN}[BOT] Memasang modul Setup Bot...${NC}"
-wget -qO /root/bot.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/bot.sh && bash /root/bot.sh; rm -f /root/bot.sh
+wget -qO /root/bot.sh "$BASE/bot.sh?t=$(date +%s)" && bash /root/bot.sh; rm -f /root/bot.sh
+# Xray hanya di-restart kalau config-nya benar-benar berubah
 if xray run -test -config $CFG >/dev/null 2>&1; then
-  systemctl restart xray
+  if [[ "$(md5sum $CFG | cut -d' ' -f1)" != "$H_XRAY_OLD" ]]; then
+    echo -e "${GRN}Config Xray berubah → restart diperlukan${NC}"; svc_restart xray
+  else
+    echo -e "${GRN}Config Xray tidak berubah → tanpa restart (koneksi aman)${NC}"
+  fi
 else
   echo -e "${RED}Config Xray tidak valid, cek: xray run -test -config $CFG${NC}"
 fi

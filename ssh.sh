@@ -9,6 +9,10 @@ export DEBIAN_FRONTEND=noninteractive
 ASD=/etc/autoscript
 mkdir -p $ASD/db $ASD/usage/ssh
 
+type svc_restart &>/dev/null || svc_restart(){ systemctl restart "$1"; }
+fh(){ cat "$@" 2>/dev/null | md5sum | cut -d' ' -f1; }
+H_DB=$(fh /etc/default/dropbear); H_BV=$(fh /etc/systemd/system/badvpn.service); H_WS=$(fh /usr/local/bin/ws-ssh.py /etc/systemd/system/ws-ssh.service)
+
 echo -e "${GRN}[SSH 1/5] Paket...${NC}"
 apt install -y dropbear stunnel4 cmake make gcc git build-essential fail2ban >/dev/null 2>&1
 
@@ -24,7 +28,9 @@ EOF
 echo -e "\n$(cat $ASD/brand 2>/dev/null || echo CASSANOVA TUNNELING)\n" > $ASD/banner.txt
 grep -q '^/bin/false' /etc/shells || echo '/bin/false' >> /etc/shells
 grep -q '^/usr/sbin/nologin' /etc/shells || echo '/usr/sbin/nologin' >> /etc/shells
-systemctl enable dropbear >/dev/null 2>&1; systemctl restart dropbear
+systemctl enable dropbear >/dev/null 2>&1
+if ! systemctl is-active --quiet dropbear; then systemctl start dropbear
+elif [[ "$(fh /etc/default/dropbear)" != "$H_DB" ]]; then svc_restart dropbear; fi
 
 # ---------- BadVPN UDP ----------
 echo -e "${GRN}[SSH 3/5] BadVPN UDP...${NC}"
@@ -46,7 +52,9 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload; systemctl enable badvpn >/dev/null 2>&1; systemctl restart badvpn
+  systemctl daemon-reload; systemctl enable badvpn >/dev/null 2>&1
+  if ! systemctl is-active --quiet badvpn; then systemctl start badvpn
+  elif [[ "$(fh /etc/systemd/system/badvpn.service)" != "$H_BV" ]]; then svc_restart badvpn; fi
 else
   echo -e "${RED}BadVPN gagal dikompilasi (dilewati)${NC}"
 fi
@@ -111,7 +119,9 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload; systemctl enable ws-ssh >/dev/null 2>&1; systemctl restart ws-ssh
+systemctl daemon-reload; systemctl enable ws-ssh >/dev/null 2>&1
+if ! systemctl is-active --quiet ws-ssh; then systemctl start ws-ssh
+elif [[ "$(fh /usr/local/bin/ws-ssh.py /etc/systemd/system/ws-ssh.service)" != "$H_WS" ]]; then svc_restart ws-ssh; fi
 
 # tambahkan lokasi WS SSH ke Nginx (port 80/443 -> /ssh-ws)
 NG=/etc/nginx/conf.d/xray.conf

@@ -13,51 +13,157 @@ apt install -y speedtest-cli zip unzip >/dev/null 2>&1
 # =====================================================
 cat > /usr/local/sbin/cas-update <<'EOF'
 #!/bin/bash
-REPO=REPO_HERE
-ASD=/etc/autoscript
-G='\e[32m'; R='\e[31m'; Y='\e[33m'; C='\e[36m'; N='\e[0m'
-cur=$(cat $ASD/version 2>/dev/null)
-latest=$(curl -s --max-time 10 "$REPO/version?t=$(date +%s)" | tr -d '[:space:]')
+# =====================================================
+#  CASSANOVA TUNNELING - AUTO UPDATE
+#  cas-update            -> menu update (interaktif)
+#  cas-update --check    -> cron: cek versi, auto update / kirim notif
+#  cas-update --auto     -> jalankan update otomatis (aman + rollback)
+# =====================================================
+# jalankan dari salinan, karena file ini ikut ditimpa saat update
+if [[ "$0" != /tmp/cas-update-run* ]]; then
+  cp -f "$0" /tmp/cas-update-run.$$ && exec bash /tmp/cas-update-run.$$ "$@"
+fi
+trap 'rm -f /tmp/cas-update-run.$$' EXIT
 
-# mode cek diam-diam (cron): simpan status saja
-if [[ "$1" == "--check" ]]; then
-  [[ -n "$latest" ]] && echo "$latest" > $ASD/latest
+ASD=/etc/autoscript
+RAW=https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling
+BRANCH=$(cat $ASD/channel 2>/dev/null); BRANCH=${BRANCH:-main}
+BASE=$RAW/$BRANCH
+LOG=/var/log/cas-update.log
+G='\e[32m'; R='\e[31m'; Y='\e[33m'; C='\e[36m'; P='\e[35m'; N='\e[0m'
+AUTO=$(cat $ASD/autoupdate 2>/dev/null); AUTO=${AUTO:-off}
+cur=$(cat $ASD/version 2>/dev/null)
+
+fetch_latest(){ curl -s --max-time 15 "$BASE/version?t=$(date +%s)" | tr -d '[:space:]'; }
+fetch_changelog(){ curl -s --max-time 15 "$BASE/changelog?t=$(date +%s)" | head -n 15; }
+newer(){ [[ -n "$1" && "$1" != "$2" && "$(printf '%s\n%s\n' "${1#v}" "${2#v}" | sort -V | tail -n1)" == "${1#v}" ]]; }
+
+tg(){ # kirim pesan ke bot owner VPS (jika ada)
+  local BOT_TOKEN CHAT_ID; [[ -f $ASD/bot ]] && . $ASD/bot
+  [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && return 0
+  curl -s --max-time 15 -o /dev/null --data-urlencode "chat_id=$CHAT_ID" \
+    --data-urlencode "text=🖥 <b>$(cat $ASD/brand)</b> | $(cat $ASD/domain)"$'\n'"$1" \
+    --data-urlencode "parse_mode=HTML" "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
+}
+
+do_update(){ # $1 = auto(1/0) ; return 0 sukses
+  local auto=$1 latest=$2 tmp=/tmp/cas-upd bk
+  exec 7>/run/cas-update.lock; flock -n 7 || { echo "Update lain sedang berjalan"; return 1; }
+  mkdir -p $tmp /root/backup
+  # 1) backup sebelum update (untuk rollback)
+  bk=/root/backup/pre-update-${cur}-$(date +%F_%H%M).zip
+  cd / && zip -rq "$bk" etc/autoscript usr/local/lib/autoscript usr/local/etc/xray/config.json \
+    etc/nginx/conf.d usr/local/sbin/menu usr/local/sbin/m-xray usr/local/sbin/m-ssh usr/local/sbin/m-feature \
+    usr/local/sbin/m-brand usr/local/sbin/m-bot usr/local/sbin/running usr/local/sbin/xray-guard \
+    usr/local/sbin/cas-update usr/local/bin/ws-ssh.py etc/cron.d 2>/dev/null
+  # 2) unduh & cek sintaks
+  if ! wget -qO $tmp/update.sh "$BASE/update.sh?t=$(date +%s)" || [[ ! -s $tmp/update.sh ]] || ! bash -n $tmp/update.sh; then
+    echo "Gagal unduh / file update rusak, update dibatalkan"; return 1
+  fi
+  # 3) jalankan update
+  echo "=== $(date '+%F %T') update $cur -> ${latest:-?} (auto=$auto, channel=$BRANCH) ===" >> $LOG
+  rm -f $ASD/pending-restart
+  if [[ $auto == 1 ]]; then CAS_AUTO=1 bash $tmp/update.sh >> $LOG 2>&1; else bash $tmp/update.sh 2>&1 | tee -a $LOG; fi
+  # 4) verifikasi, rollback bila gagal
+  local ok=1
+  xray run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1 || ok=0
+  nginx -t >/dev/null 2>&1 || ok=0
+  if [[ $ok == 0 ]]; then
+    echo "Verifikasi gagal → rollback ke $cur" | tee -a $LOG
+    unzip -oq "$bk" -d / && nginx -t >/dev/null 2>&1 && systemctl reload nginx
+    xray run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1 && systemctl restart xray
+    return 2
+  fi
+  echo "$(cat $ASD/version)" > $ASD/latest
+  find /root/backup -name 'pre-update-*.zip' -mtime +7 -delete 2>/dev/null
+  return 0
+}
+
+# ------------------ mode cron ------------------
+if [[ "$1" == "--check" || "$1" == "--auto" ]]; then
+  latest=$(fetch_latest); [[ -z "$latest" ]] && exit 0
+  echo "$latest" > $ASD/latest
+  newer "$latest" "$cur" || exit 0
+  if [[ "$AUTO" == on ]]; then
+    do_update 1 "$latest"; rc=$?
+    new=$(cat $ASD/version)
+    if [[ $rc == 0 ]]; then
+      msg="✅ <b>Auto Update berhasil</b>"$'\n'"$cur → $new"
+      [[ -s $ASD/pending-restart ]] && msg+=$'\n'"⏳ Restart layanan ($(sort -u $ASD/pending-restart | tr '\n' ' ')) dijadwalkan jam 04:00 agar koneksi user tidak putus."
+      cl=$(fetch_changelog); [[ -n "$cl" ]] && msg+=$'\n\n'"📝 <b>Perubahan:</b>"$'\n'"$cl"
+      tg "$msg"
+    elif [[ $rc == 2 ]]; then
+      tg "⚠️ <b>Auto Update gagal</b> ($cur → $latest)"$'\n'"Sudah dikembalikan otomatis ke $cur. Script tetap berjalan normal."
+    fi
+  else
+    # auto update OFF → hanya kirim pemberitahuan sekali per versi
+    if [[ "$(cat $ASD/notified 2>/dev/null)" != "$latest" ]]; then
+      cl=$(fetch_changelog)
+      tg "🔔 <b>Update tersedia</b>: $cur → $latest"$'\n'"Update lewat: menu → 6 → 12"${cl:+$'\n\n'"📝 <b>Perubahan:</b>"$'\n'"$cl"}
+      echo "$latest" > $ASD/notified
+    fi
+  fi
   exit 0
 fi
 
-clear
-echo -e "${C}════════════════════════════════════${N}"
-echo -e "          ${G}UPDATE SCRIPT${N}"
-echo -e "${C}════════════════════════════════════${N}"
-echo -e " Versi terpasang : ${Y}$cur${N}"
-if [[ -z "$latest" ]]; then
-  echo -e " Versi terbaru   : ${R}gagal dicek (cek koneksi/GitHub)${N}"
-  echo; read -rp "Tetap update paksa? (y/t) : " y; [[ "$y" != y ]] && exit 0
-else
-  echo "$latest" > $ASD/latest
-  echo -e " Versi terbaru   : ${G}$latest${N}"
-  if [[ "$cur" == "$latest" && "$1" != "--force" ]]; then
-    echo -e "\n ${G}Script sudah versi terbaru.${N}"
-    echo; read -rp "Install ulang versi ini? (y/t) : " y; [[ "$y" != y ]] && exit 0
-  else
-    echo; read -rp "Update ke $latest sekarang? (y/t) : " y; [[ "$y" != y ]] && exit 0
-  fi
-fi
-echo -e "\n${Y}Mengunduh update...${N}"
-if wget -qO /root/update.sh "$REPO/update.sh?t=$(date +%s)" && [[ -s /root/update.sh ]]; then
-  bash /root/update.sh
-  cat $ASD/version > $ASD/latest 2>/dev/null
-  echo; read -rp "Tekan Enter untuk kembali ke menu"
-else
-  echo -e "${R}Gagal mengunduh update.sh${N}"; sleep 3
-fi
+# ------------------ menu interaktif ------------------
+while true; do
+  AUTO=$(cat $ASD/autoupdate 2>/dev/null); AUTO=${AUTO:-off}; cur=$(cat $ASD/version 2>/dev/null)
+  clear
+  echo -e "${C}════════════════════════════════════${N}"
+  echo -e "           ${P}AUTO UPDATE${N}"
+  echo -e "${C}════════════════════════════════════${N}"
+  latest=$(fetch_latest); [[ -n "$latest" ]] && echo "$latest" > $ASD/latest
+  echo -e " Versi terpasang : ${Y}$cur${N}"
+  echo -e " Versi terbaru   : $([[ -z "$latest" ]] && echo -e "${R}gagal dicek${N}" || echo -e "${G}$latest${N}")"
+  echo -e " Auto update     : $([[ $AUTO == on ]] && echo -e "${G}ON${N}" || echo -e "${R}OFF${N}")"
+  [[ "$BRANCH" != main ]] && echo -e " Channel         : ${Y}$BRANCH (uji coba)${N}"
+  if newer "$latest" "$cur"; then echo -e "\n ${Y}🔔 Ada update baru!${N}"; else echo -e "\n ${G}Script sudah versi terbaru${N}"; fi
+  echo -e "${C}════════════════════════════════════${N}"
+  echo -e " ${C}1.)${N} Update sekarang"
+  echo -e " ${C}2.)${N} Auto update ON/OFF"
+  echo -e " ${C}3.)${N} Lihat perubahan (changelog)"
+  echo -e " ${C}4.)${N} Back to Menu"
+  echo -e "${C}════════════════════════════════════${N}"
+  read -rp "$(echo -e "${G}Select From Options [1-4] : ${N}")" o
+  case $o in
+    1) if ! newer "$latest" "$cur"; then read -rp "Sudah terbaru. Install ulang versi ini? (y/n) : " y; [[ "$y" != y ]] && continue; fi
+       read -rp "Update sekarang? (y/n) : " y; [[ "$y" != y ]] && continue
+       do_update 0 "$latest"; rc=$?
+       [[ $rc == 0 ]] && echo -e "\n${G}Update selesai: $(cat $ASD/version)${N}"
+       [[ $rc == 2 ]] && echo -e "\n${R}Update gagal diverifikasi, sudah dikembalikan ke $cur${N}"
+       read -rp "Tekan Enter..." ;;
+    2) if [[ $AUTO == on ]]; then
+         read -rp "Matikan auto update? (y/n) : " y; [[ "$y" == y ]] && echo off > $ASD/autoupdate
+       else
+         echo -e "\n Jika ON, script akan update sendiri saat ada versi baru."
+         echo -e " Update tidak memutus koneksi user. Bila perlu restart layanan,"
+         echo -e " restart ditunda ke jam 04:00. Gagal update = otomatis rollback.\n"
+         read -rp "Aktifkan auto update? (y/n) : " y; [[ "$y" == y ]] && echo on > $ASD/autoupdate
+       fi ;;
+    3) clear; echo -e "${P}CHANGELOG${N}\n"; fetch_changelog; echo; read -rp "Tekan Enter..." ;;
+    4|x|X) exit 0 ;;
+  esac
+done
 EOF
-sed -i "s#REPO_HERE#https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main#" /usr/local/sbin/cas-update
 chmod +x /usr/local/sbin/cas-update
-# cek versi terbaru tiap 6 jam (tidak memperlambat menu)
-echo "17 */6 * * * root /usr/local/sbin/cas-update --check" > /etc/cron.d/cas-update
-chmod 644 /etc/cron.d/cas-update
-/usr/local/sbin/cas-update --check
+
+# perintah khusus owner: pindah channel (main = buyer, beta = uji coba)
+cat > /usr/local/sbin/cas-channel <<'EOF'
+#!/bin/bash
+case $1 in
+  beta|main) echo "$1" > /etc/autoscript/channel; echo "Channel diset: $1"; /usr/local/sbin/cas-update --check ;;
+  *) echo "Channel sekarang: $(cat /etc/autoscript/channel 2>/dev/null || echo main)"; echo "Pakai: cas-channel beta | cas-channel main" ;;
+esac
+EOF
+chmod +x /usr/local/sbin/cas-channel
+
+# cek update tiap jam, menit acak per VPS (agar 80+ VPS tidak serentak ke GitHub)
+if [[ ! -f /etc/cron.d/cas-update ]] || grep -q '^17 \*/6' /etc/cron.d/cas-update; then
+  echo "$((RANDOM % 60)) * * * * root /usr/local/sbin/cas-update --check" > /etc/cron.d/cas-update
+  chmod 644 /etc/cron.d/cas-update
+fi
+[[ -f /etc/autoscript/autoupdate ]] || echo off > /etc/autoscript/autoupdate
 
 # =====================================================
 #  MENU FEATURES
@@ -206,7 +312,7 @@ while true; do
   echo -e " ${C}9.)${N}  Security SYN & Optimasi"
   echo -e " ${C}10.)${N} Change Domain VPS"
   echo -e " ${C}11.)${N} Information System"
-  echo -e " ${C}12.)${N} Update Script"
+  echo -e " ${C}12.)${N} Auto Update"
   echo -e " ${C}13.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
