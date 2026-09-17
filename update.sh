@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.8.2
+#  CASSANOVA TUNNELING - UPDATE v1.8.3
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -43,6 +43,7 @@ cat > /usr/local/lib/autoscript/lib.sh <<'EOF'
 [[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
 type cas_notify &>/dev/null || cas_notify(){ :; }
 type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
+type cas_notify_quote &>/dev/null || cas_notify_quote(){ :; }
 R='\e[31m'; G='\e[32m'; Y='\e[33m'; B='\e[34m'; C='\e[36m'; P='\e[35m'; W='\e[1;97m'; O='\e[38;5;208m'; N='\e[0m'
 BGB='\e[44m'; BG='\e[41m'
 CFG=/usr/local/etc/xray/config.json
@@ -215,7 +216,9 @@ for p in $PROTOS; do
       n=$(echo "$COUNTS" | awk -v u="$p.$u" '$1==u{print $2}')
       if [[ -n "$n" ]] && (( n > ipl )); then
         xray_del $p "$u"; db_set $p "$u" 6 "banned:$(( now + BANMIN*60 ))"
-        cas_notify "🚫 <b>Multi Login</b>"$'\n'"${p^^} <code>$u</code> pakai $n IP (limit $ipl)"$'\n'"Banned ${BANMIN} menit"
+        iplist=$(tail -n 20000 /var/log/xray/access.log 2>/dev/null | sed -nE "s#^([0-9/]+ ([0-9:]+))[^ ]* from (tcp:|udp:)?(\\[[^]]+\\]|[0-9.]+):[0-9]+ accepted .*email: $p\\.$u\\b.*#\\2 \\4#p" | sort -u | tail -n 5)
+        cas_notify_quote "Multi Login ${p^^}" "<pre>✓ $u
+$iplist</pre><blockquote>Lock - $(date +%T)"$'\n'"Open - $(date -d "+$BANMIN min" +%T)</blockquote>"
       fi
     fi
   done < <(cat $ASD/db/$p.db)
@@ -288,8 +291,8 @@ mk_link(){ # net(ws|up|grpc) tls(1|0)  -> pakai variabel ID & REM
   echo "$PROTO://$ID@$DOMAIN:$port?$qs#$REM"
 }
 
-show_account(){ # user id exp  ; arg4 = notif (kirim juga ke Telegram)
-  local ipl q CITY ISP notif=$4 L2="${B}────────────────────────────────────${N}"
+show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (akun penuh)
+  local ipl q CITY ISP notif=$4 ntitle=${5:-"$UP Dibuat"} L2="${B}────────────────────────────────────${N}"
   REM=$1; ID=$2
   local exp=$3
   ipl=$(db_field $PROTO "$REM" 4); q=$(db_field $PROTO "$REM" 5)
@@ -297,8 +300,7 @@ show_account(){ # user id exp  ; arg4 = notif (kirim juga ke Telegram)
   ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
   row(){ printf " ${G}%-14s${N}: %b\n" "$1" "$2"; }
   sec(){ echo -e "$L2"; printf "${Y}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$L2"; }
-  if [[ "$notif" == notif ]]; then
-    local NL="────────────────────────────────"
+  if [[ "$notif" == notif || "$notif" == quote ]]; then
     local body="<pre>Remarks   : $REM
 CITY      : $CITY
 ISP       : $ISP
@@ -319,7 +321,7 @@ Expired   : $exp</pre>"
     body+=$'\n'"<b>$UP GRPC</b>"$'\n'"<code>$(mk_link grpc 1)</code>"
     body+=$'\n'"<b>$UP Upgrade TLS</b>"$'\n'"<code>$(mk_link up 1)</code>"
     body+=$'\n'"<b>$UP Upgrade NO TLS</b>"$'\n'"<code>$(mk_link up 0)</code>"
-    cas_notify_raw "🆕 <b>$UP Dibuat</b>"$'\n'"$body"
+    if [[ "$notif" == quote ]]; then cas_notify_quote "$ntitle" "$body"; else cas_notify_raw "🆕 <b>$ntitle</b>"$'\n'"$body"; fi
   fi
   clear
   echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#UP}+8)/2 )) "$UP ACCOUNT"; echo -e "$LINE"
@@ -421,8 +423,11 @@ trial(){
 
 delete(){
   pick_user || return
+  local dexp=$(db_field $PROTO "$U" 2)
   lock_db; remove_account $PROTO "$U"; unlock_db
-  cas_notify "🗑 <b>$UP Dihapus</b>"$'\n'"User: <code>$U</code>"
+  cas_notify_quote "Delete User" "<pre>User    : $U
+Expired : $dexp
+Type    : $PROTO</pre>"
   echo -e "${G}User $U dihapus (bisa dipulihkan lewat Recovery)${N}"; pause
 }
 
@@ -439,7 +444,10 @@ renew(){
   st=$(db_field $PROTO "$U" 6)
   if [[ "$st" == "quota" ]]; then xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"; db_set $PROTO "$U" 6 active; fi
   unlock_db
-  cas_notify "🔄 <b>$UP Diperpanjang</b>"$'\n'"User: <code>$U</code>"$'\n'"+$d hari → $new"
+  cas_notify_quote "Renew/Extend User" "<pre>User       : $U
+Added      : $d Days
+Expires on : $new
+Type       : $PROTO</pre>"
   echo -e "${G}User $U diperpanjang sampai $new (pemakaian kuota di-reset)${N}"; pause
 }
 
@@ -480,7 +488,8 @@ lock_user(){
   [[ "$(db_field $PROTO "$U" 6)" == "active" ]] && xray_del $PROTO "$U"
   db_set $PROTO "$U" 6 locked
   unlock_db
-  cas_notify "🔒 <b>$UP Dikunci</b>"$'\n'"User: <code>$U</code>"
+  cas_notify_quote "Lock $UP (Manual)" "<pre>User : $U
+Lock : $(date +%T)</pre>"
   echo -e "${G}User $U dikunci${N}"; pause
 }
 
@@ -495,7 +504,8 @@ unlock_user(){
   xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"
   db_set $PROTO "$U" 6 active
   unlock_db
-  cas_notify "🔓 <b>$UP Dibuka</b>"$'\n'"User: <code>$U</code>"
+  cas_notify_quote "Unlock $UP" "<pre>User : $U
+Open : $(date +%T)</pre>"
   echo -e "${G}User $U dibuka kembali${N}"; pause
 }
 
@@ -527,8 +537,7 @@ recovery(){
   awk -v u="$u" '$1!=u' "$TRASH" > "$TRASH.tmp" && mv "$TRASH.tmp" "$TRASH"
   xray_add $PROTO "$u" "$id"
   unlock_db
-  cas_notify "♻️ <b>$UP Dipulihkan</b>"$'\n'"User: <code>$u</code>"$'\n'"Expired: $new"
-  show_account "$u" "$id" "$new"; pause
+  show_account "$u" "$id" "$new" quote "$UP Dipulihkan"; pause
 }
 
 edit_field(){ # field(4=ip,5=quota) all(0/1)
@@ -893,7 +902,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.8.2" > /etc/autoscript/version
+echo "v1.8.3" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----

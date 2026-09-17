@@ -143,6 +143,7 @@ cat > /usr/local/sbin/m-ssh <<'EOF'
 [[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
 type cas_notify &>/dev/null || cas_notify(){ :; }
 type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
+type cas_notify_quote &>/dev/null || cas_notify_quote(){ :; }
 DB=$ASD/db/ssh.db
 TRASH=$ASD/db/ssh.trash
 DOMAIN=$(cat $ASD/domain)
@@ -180,8 +181,8 @@ ssh_expire(){
   awk -v l="$lim" 'NF && $1 !~ /trial/ && $NF>=l' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"
 }
 
-show_account(){ # user pass exp ipl [notif]
-  local u=$1 p=$2 exp=$3 ipl=$4 notif=$5 IP
+show_account(){ # user pass exp ipl [notif|quote] [judul]
+  local u=$1 p=$2 exp=$3 ipl=$4 notif=$5 ntitle=${6:-"SSH Dibuat"} IP
   IP=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
   clear
   echo -e "$LINE"; echo -e "          ${G}SSH ACCOUNT${N}"; echo -e "$LINE"
@@ -196,9 +197,8 @@ show_account(){ # user pass exp ipl [notif]
   echo -e "$LINE"
   echo -e " ${G}Format OVPN/HTTP Custom:${N} $DOMAIN:22@$u:$p"
   echo -e "$LINE"
-  if [[ "$notif" == notif ]]; then
-    cas_notify_raw "🆕 <b>SSH Dibuat</b>"$'
-'"<pre>Username  : $u
+  if [[ "$notif" == notif || "$notif" == quote ]]; then
+    local body="<pre>Username  : $u
 Password  : $p
 Domain    : $DOMAIN
 IP        : $IP
@@ -210,6 +210,8 @@ Limit IP  : $([[ "$ipl" == 0 ]] && echo Unlimited || echo "$ipl IP")
 Expired   : $exp</pre>"$'
 '"<b>Format HTTP Custom</b>"$'
 '"<code>$DOMAIN:22@$u:$p</code>"
+    if [[ "$notif" == quote ]]; then cas_notify_quote "$ntitle" "$body"; else cas_notify_raw "🆕 <b>$ntitle</b>"$'
+'"$body"; fi
   fi
 }
 
@@ -277,7 +279,11 @@ trial(){
   show_account "$u" "$p" "$m menit" 1 notif; pause
 }
 
-delete(){ pick_user || return; lock_db; ssh_remove "$U"; unlock_db; cas_notify "🗑 <b>SSH Dihapus</b>"$'\n'"User: <code>$U</code>"; echo -e "${G}User $U dihapus${N}"; pause; }
+delete(){ pick_user || return; local dexp=$(sf "$U" 2); lock_db; ssh_remove "$U"; unlock_db
+  cas_notify_quote "Delete User" "<pre>User    : $U
+Expired : $dexp
+Type    : ssh</pre>"
+  echo -e "${G}User $U dihapus${N}"; pause; }
 
 renew(){
   local d base today new
@@ -288,7 +294,10 @@ renew(){
   lock_db; sset "$U" 2 "$new"; chage -E "$(date -d "$new" +%Y-%m-%d)" "$U" 2>/dev/null
   usermod -U "$U" 2>/dev/null; [[ "$(sf "$U" 4)" != active ]] && sset "$U" 4 active
   unlock_db
-  cas_notify "🔄 <b>SSH Diperpanjang</b>"$'\n'"User: <code>$U</code>"$'\n'"+$d hari → $new"
+  cas_notify_quote "Renew/Extend User" "<pre>User       : $U
+Added      : $d Days
+Expires on : $new
+Type       : ssh</pre>"
   echo -e "${G}User $U diperpanjang sampai $new${N}"; pause
 }
 
@@ -312,11 +321,15 @@ check_login(){
   echo -e "$LINE"; pause
 }
 
-lock_user(){ pick_user active || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db; cas_notify "🔒 <b>SSH Dikunci</b>"$'\n'"User: <code>$U</code>"; echo -e "${G}User $U dikunci${N}"; pause; }
+lock_user(){ pick_user active || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db
+  cas_notify_quote "Lock SSH (Manual)" "<pre>User : $U</pre><blockquote>Lock - $(date +%T)</blockquote>"
+  echo -e "${G}User $U dikunci${N}"; pause; }
 unlock_user(){
   pick_user inactive || return
   [[ "$(sf "$U" 2)" < "$(date +%F)" ]] && { msg "${R}Akun expired, gunakan Renew${N}"; return; }
-  lock_db; usermod -U "$U" 2>/dev/null; sset "$U" 4 active; unlock_db; cas_notify "🔓 <b>SSH Dibuka</b>"$'\n'"User: <code>$U</code>"; echo -e "${G}User $U dibuka${N}"; pause
+  lock_db; usermod -U "$U" 2>/dev/null; sset "$U" 4 active; unlock_db
+  cas_notify_quote "Unlock SSH" "<pre>User : $U</pre><blockquote>Open - $(date +%T)</blockquote>"
+  echo -e "${G}User $U dibuka${N}"; pause
 }
 
 recovery(){
@@ -338,8 +351,7 @@ recovery(){
   new=$(date -d "+$d days" +%F)
   useradd -e "$new" -s /bin/false -M "$u" 2>/dev/null; echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
   lock_db; echo "$u $new $ipl active" >> "$DB"; awk -v u="$u" '$1!=u' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"; unlock_db
-  cas_notify "♻️ <b>SSH Dipulihkan</b>"$'\n'"User: <code>$u</code>"$'\n'"Expired: $new"
-  show_account "$u" "$p" "$new" "$ipl"; pause
+  show_account "$u" "$p" "$new" "$ipl" quote "SSH Dipulihkan"; pause
 }
 
 edit_limit(){ # all(0/1)
@@ -411,7 +423,8 @@ while read -r u exp ipl st; do
   [[ "$st" != active || ! "$ipl" =~ ^[0-9]+$ || "$ipl" -eq 0 ]] && continue
   n=$(ps aux | grep -E "sshd:|dropbear" | grep -v grep | grep -oE "$u@|$u\b" | wc -l)
   if (( n > ipl )); then usermod -L "$u" 2>/dev/null; pkill -u "$u" 2>/dev/null; sset "$u" 4 "banned:$(( now + BANMIN*60 ))"
-    cas_notify "🚫 <b>Multi Login</b>"$'\n'"SSH <code>$u</code> $n sesi (limit $ipl)"$'\n'"Banned ${BANMIN} menit"; fi
+    cas_notify_quote "Multi Login SSH" "<pre>✓ $u
+$n sesi (limit $ipl)</pre><blockquote>Lock - $(date +%T)"$'\n'"Open - $(date -d "+$BANMIN min" +%T)</blockquote>"; fi
 done < <(cat "$DB")
 EOF
 chmod +x /usr/local/lib/autoscript/ssh-guard.sh

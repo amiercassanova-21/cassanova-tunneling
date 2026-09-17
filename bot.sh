@@ -33,6 +33,8 @@ _cas_send(){
 cas_notify(){ _cas_send "$1"; }
 # cas_notify_raw "teks"  -> pesan panjang (akun penuh); sama-sama diberi header
 cas_notify_raw(){ _cas_send "$1"; }
+# cas_notify_quote "judul" "isi" -> judul dalam blockquote (tanda kutip), lalu isi
+cas_notify_quote(){ _cas_send "<blockquote>$1</blockquote>"$'\n'"$2"; }
 EOF
 
 

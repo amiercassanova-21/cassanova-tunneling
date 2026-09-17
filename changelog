@@ -1,4 +1,7 @@
-v1.8.2
-- Dashboard depan: brand & teks Auto Update dihilangkan (lebih bersih)
-- Notif create akun sekarang lengkap (akun penuh + semua link, bisa 1-klik salin di Telegram)
-- Notif create/renew/delete/lock/unlock diberi header server (domain + IP)
+v1.8.3
+- Notif Telegram semua aksi kini lengkap & terformat:
+  Create/Trial/Recovery = akun penuh + semua link (1-klik salin)
+  Recovery pakai judul blockquote (tanda kutip)
+  Renew & Delete = format User/Added/Expires/Type
+  Lock manual & Multi Login = format dengan Lock-Open (multi login sertakan daftar IP)
+- Berlaku VLESS/VMESS/TROJAN/SSH
