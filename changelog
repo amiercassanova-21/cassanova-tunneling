@@ -1,4 +1,5 @@
-v1.8.5
-- Notif Telegram: header diganti jadi IP/DOMAIN/ISP (tanpa baris CASSANOVA TUNNELING)
-- Notif Create/Recovery kini persis seperti tampilan akun di VPS (label & isi sama)
-- Judul aksi tetap bertanda kutip; berlaku VLESS/VMESS/TROJAN/SSH
+v1.8.6
+- Notif Create/Recovery kini PERSIS seperti tampilan VPS (garis ════/────, tanpa tombol SALIN KODE)
+- Header IP/DOMAIN/ISP juga tanpa tombol salin
+- Recovery: judul bertanda kutip di atas blok akun
+- Berlaku VLESS/VMESS/TROJAN/SSH

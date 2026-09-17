@@ -198,18 +198,27 @@ show_account(){ # user pass exp ipl [notif|quote] [judul]
   echo -e " ${G}Format OVPN/HTTP Custom:${N} $DOMAIN:22@$u:$p"
   echo -e "$LINE"
   if [[ "$notif" == notif || "$notif" == quote ]]; then
-    local body="<pre>Username  : $u
-Password  : $p
-Domain    : $DOMAIN
-IP        : $IP
-OpenSSH   : 22
-Dropbear  : 143, 109
-SSH WS    : 80, 443 (/ssh-ws)
-BadVPN    : 7100-7900
-Limit IP  : $([[ "$ipl" == 0 ]] && echo Unlimited || echo "$ipl IP")
-Expired   : $exp</pre>"$'
-'"<b>Format HTTP Custom</b>"$'
-'"<code>$DOMAIN:22@$u:$p</code>"
+    local EQ="════════════════════════════════"
+    local BR="────────────────────────────────"
+    local body="<code>$EQ
+           SSH ACCOUNT
+$EQ
+ Username      : $u
+ Password      : $p
+ Domain        : $DOMAIN
+ IP            : $IP
+ Port OpenSSH  : 22
+ Port Dropbear : 143, 109
+ Port SSH WS   : 80, 443 (/ssh-ws)
+ Port SSL/TLS  : 443
+ BadVPN UDP    : 7100-7900
+ Limit IP      : $([[ "$ipl" == 0 ]] && echo Unlimited || echo "$ipl IP")
+ Expired On    : $exp
+$BR
+        Format HTTP Custom
+$BR
+$DOMAIN:22@$u:$p
+$BR</code>"
     if [[ "$notif" == quote ]]; then cas_notify_quote "$ntitle" "$body"; else cas_notify_raw "🆕 <b>$ntitle</b>"$'
 '"$body"; fi
   fi

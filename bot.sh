@@ -15,9 +15,9 @@ _cas_head(){
   local I=/etc/autoscript/ipinfo.json ip isp
   ip=$(jq -r '.ip // "-"' $I 2>/dev/null)
   isp=$(jq -r '.org // "-"' $I 2>/dev/null | sed 's/^AS[0-9]* //')
-  echo "<pre>IP     : $ip
+  echo "<code>IP     : $ip
 DOMAIN : $(cat /etc/autoscript/domain 2>/dev/null)
-ISP    : $isp</pre>"
+ISP    : $isp</code>"
 }
 # kirim pesan Telegram (HTML). Baris baru pakai newline asli, bukan %0A.
 _cas_send(){
@@ -37,7 +37,7 @@ cas_notify(){ _cas_send "$1"; }
 # cas_notify_raw "teks"  -> pesan panjang (akun penuh); sama-sama diberi header
 cas_notify_raw(){ _cas_send "$1"; }
 # cas_notify_quote "judul" "isi" -> judul dalam blockquote (tanda kutip), lalu isi
-cas_notify_quote(){ _cas_send "<blockquote>$1</blockquote>"$'\n'"$2"; }
+cas_notify_quote(){ _cas_send "<blockquote><b>$1</b>"$'\n'"$2</blockquote>"; }
 EOF
 
 
