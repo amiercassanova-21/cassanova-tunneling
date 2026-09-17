@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.8.3
+#  CASSANOVA TUNNELING - UPDATE v1.8.4
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -374,6 +374,21 @@ list_users(){ # $1 = all | active | inactive
   echo -e "$LINE"
 }
 
+confirm_pick(){ # konfirmasi pilihan user (y/n)
+  echo
+  echo -e " ${G}You Choose ${Y}➤ ${O}$U${N}"
+  echo
+  local yn; read -rp "$(echo -e " ${G}Correct (y/n) ? ${N}")" yn
+  [[ "$yn" == y || "$yn" == Y ]] && return 0
+  msg " ${Y}Dibatalkan${N}"; return 1
+}
+done_box(){ # judul lalu pasangan label nilai
+  local t=$1; shift
+  echo; echo -e " ${G}$t${N}"; echo
+  while (( $# >= 2 )); do printf " ${G}%-7s${N}: ${O}%s${N}\n" "$1" "$2"; shift 2; done
+  echo
+}
+
 pick_user(){ # $1 = all | active | inactive ; hasil di variabel U
   local f=${1:-all} inp
   list_users "$f"
@@ -423,17 +438,19 @@ trial(){
 
 delete(){
   pick_user || return
+  confirm_pick || return
   local dexp=$(db_field $PROTO "$U" 2)
   lock_db; remove_account $PROTO "$U"; unlock_db
   cas_notify_quote "Delete User" "<pre>User    : $U
 Expired : $dexp
 Type    : $PROTO</pre>"
-  echo -e "${G}User $U dihapus (bisa dipulihkan lewat Recovery)${N}"; pause
+  done_box "DELETE Successfully" "USER" "$U" "STATUS" "DELETED (masuk Recovery)"; pause
 }
 
 renew(){
   local d base today new st
   pick_user || return
+  confirm_pick || return
   read -rp "Tambah masa aktif (hari) : " d; num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
   lock_db
   base=$(db_field $PROTO "$U" 2); today=$(date +%F)
@@ -448,7 +465,7 @@ renew(){
 Added      : $d Days
 Expires on : $new
 Type       : $PROTO</pre>"
-  echo -e "${G}User $U diperpanjang sampai $new (pemakaian kuota di-reset)${N}"; pause
+  done_box "RENEW Successfully" "USER" "$U" "ADDED" "$d Days" "EXPIRED" "$new"; pause
 }
 
 modify_uuid(){
@@ -484,18 +501,20 @@ check_login(){
 
 lock_user(){
   pick_user active || return
+  confirm_pick || return
   lock_db
   [[ "$(db_field $PROTO "$U" 6)" == "active" ]] && xray_del $PROTO "$U"
   db_set $PROTO "$U" 6 locked
   unlock_db
   cas_notify_quote "Lock $UP (Manual)" "<pre>User : $U
 Lock : $(date +%T)</pre>"
-  echo -e "${G}User $U dikunci${N}"; pause
+  done_box "LOCK Successfully" "USER" "$U" "STATUS" "LOCK"; pause
 }
 
 unlock_user(){
   local st exp
   pick_user inactive || return
+  confirm_pick || return
   st=$(db_field $PROTO "$U" 6); exp=$(db_field $PROTO "$U" 2)
   [[ "$st" == "active" ]] && { msg "${Y}User $U sudah aktif${N}"; return; }
   [[ "$exp" < "$(date +%F)" ]] && { msg "${R}Akun sudah expired, gunakan Renew${N}"; return; }
@@ -506,7 +525,7 @@ unlock_user(){
   unlock_db
   cas_notify_quote "Unlock $UP" "<pre>User : $U
 Open : $(date +%T)</pre>"
-  echo -e "${G}User $U dibuka kembali${N}"; pause
+  done_box "UNLOCKED Successfully" "USER" "$U" "STATUS" "UNLOCKED"; pause
 }
 
 recovery(){
@@ -902,7 +921,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.8.3" > /etc/autoscript/version
+echo "v1.8.4" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----

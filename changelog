@@ -1,7 +1,5 @@
-v1.8.3
-- Notif Telegram semua aksi kini lengkap & terformat:
-  Create/Trial/Recovery = akun penuh + semua link (1-klik salin)
-  Recovery pakai judul blockquote (tanda kutip)
-  Renew & Delete = format User/Added/Expires/Type
-  Lock manual & Multi Login = format dengan Lock-Open (multi login sertakan daftar IP)
-- Berlaku VLESS/VMESS/TROJAN/SSH
+v1.8.4
+- Laporan User Login di Telegram mengikuti gaya Potato (header polos + judul bertanda kutip)
+- Perintah cepat: ketik updatesc untuk update (konfirmasi y/n)
+- Konfirmasi "Correct (y/n)" sebelum Delete, Renew, Lock, Unlock di semua protokol
+- Tampilan hasil ala Potato: LOCK/UNLOCKED/DELETE/RENEW Successfully

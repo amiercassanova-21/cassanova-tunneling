@@ -237,6 +237,21 @@ list_users(){ # $1 = all | active | inactive
   echo -e "$LINE"; echo -e " ${G}Total : ${Y}$i${G} akun${N}"; echo -e "$LINE"
 }
 
+confirm_pick(){ # konfirmasi pilihan user (y/n)
+  echo
+  echo -e " ${G}You Choose ${Y}➤ ${O}$U${N}"
+  echo
+  local yn; read -rp "$(echo -e " ${G}Correct (y/n) ? ${N}")" yn
+  [[ "$yn" == y || "$yn" == Y ]] && return 0
+  msg " ${Y}Dibatalkan${N}"; return 1
+}
+done_box(){ # judul lalu pasangan label nilai
+  local t=$1; shift
+  echo; echo -e " ${G}$t${N}"; echo
+  while (( $# >= 2 )); do printf " ${G}%-7s${N}: ${O}%s${N}\n" "$1" "$2"; shift 2; done
+  echo
+}
+
 pick_user(){ # $1 = all | active | inactive
   local f=${1:-all} inp
   list_users "$f"
@@ -279,15 +294,16 @@ trial(){
   show_account "$u" "$p" "$m menit" 1 notif; pause
 }
 
-delete(){ pick_user || return; local dexp=$(sf "$U" 2); lock_db; ssh_remove "$U"; unlock_db
+delete(){ pick_user || return; confirm_pick || return; local dexp=$(sf "$U" 2); lock_db; ssh_remove "$U"; unlock_db
   cas_notify_quote "Delete User" "<pre>User    : $U
 Expired : $dexp
 Type    : ssh</pre>"
-  echo -e "${G}User $U dihapus${N}"; pause; }
+  done_box "DELETE Successfully" "USER" "$U" "STATUS" "DELETED (masuk Recovery)"; pause; }
 
 renew(){
   local d base today new
   pick_user || return
+  confirm_pick || return
   read -rp "Tambah masa aktif (hari) : " d; num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
   base=$(sf "$U" 2); today=$(date +%F); [[ "$base" < "$today" ]] && base=$today
   new=$(date -d "$base +$d days" +%F)
@@ -298,7 +314,7 @@ renew(){
 Added      : $d Days
 Expires on : $new
 Type       : ssh</pre>"
-  echo -e "${G}User $U diperpanjang sampai $new${N}"; pause
+  done_box "RENEW Successfully" "USER" "$U" "ADDED" "$d Days" "EXPIRED" "$new"; pause
 }
 
 modify_pass(){
@@ -321,15 +337,16 @@ check_login(){
   echo -e "$LINE"; pause
 }
 
-lock_user(){ pick_user active || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db
+lock_user(){ pick_user active || return; confirm_pick || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db
   cas_notify_quote "Lock SSH (Manual)" "<pre>User : $U</pre><blockquote>Lock - $(date +%T)</blockquote>"
-  echo -e "${G}User $U dikunci${N}"; pause; }
+  done_box "LOCK Successfully" "USER" "$U" "STATUS" "LOCK"; pause; }
 unlock_user(){
   pick_user inactive || return
+  confirm_pick || return
   [[ "$(sf "$U" 2)" < "$(date +%F)" ]] && { msg "${R}Akun expired, gunakan Renew${N}"; return; }
   lock_db; usermod -U "$U" 2>/dev/null; sset "$U" 4 active; unlock_db
   cas_notify_quote "Unlock SSH" "<pre>User : $U</pre><blockquote>Open - $(date +%T)</blockquote>"
-  echo -e "${G}User $U dibuka${N}"; pause
+  done_box "UNLOCKED Successfully" "USER" "$U" "STATUS" "UNLOCKED"; pause
 }
 
 recovery(){

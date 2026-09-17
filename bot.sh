@@ -49,9 +49,9 @@ MIN=$(cat $ASD/report_interval 2>/dev/null); [[ "$MIN" =~ ^[0-9]+$ && $MIN -gt 0
 IPV=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
 ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
 DOMAIN=$(cat $ASD/domain)
-HEAD="<pre>IP     : $IPV
+HEAD="<code>IP     : $IPV
 DOMAIN : $DOMAIN
-ISP    : $ISP</pre>"
+ISP    : $ISP</code>"
 
 send(){
   curl -s --max-time 20 -o /dev/null --data-urlencode "chat_id=$CHAT_ID" \
@@ -64,12 +64,12 @@ send_section(){ # judul, isi(multiline), total
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     if (( ${#chunk} + ${#line} > 3300 )); then
-      send "$HEAD"$'\n'"<b>$title</b> (bag. $part)"$'\n'"$chunk"; chunk=""; part=$((part+1))
+      send "$HEAD"$'\n'"<blockquote><b>$title</b> (bag. $part)</blockquote>"$'\n'"$chunk"; chunk=""; part=$((part+1))
     fi
     chunk+="$line"$'\n'
   done <<< "$body"
   [[ $part -gt 1 ]] && title="$title (bag. $part)"
-  send "$HEAD"$'\n'"<b>$title</b>"$'\n'"$chunk"$'\n'"<b>Total : $total</b>"
+  send "$HEAD"$'\n'"<blockquote><b>$title</b></blockquote>"$'\n'"$chunk"$'\n'"<b>Total : $total</b>"
 }
 
 LOG=/var/log/xray/access.log

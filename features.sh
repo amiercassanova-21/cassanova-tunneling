@@ -79,6 +79,31 @@ do_update(){ # $1 = auto(1/0) ; return 0 sukses
   return 0
 }
 
+# ------------------ jalan pintas: updatesc ------------------
+if [[ "$1" == "--quick" ]]; then
+  latest=$(fetch_latest); [[ -n "$latest" ]] && echo "$latest" > $ASD/latest
+  clear
+  echo -e "${C}════════════════════════════════════${N}"
+  echo -e "        ${P}UPDATE CASSANOVA TUNNELING${N}"
+  echo -e "${C}════════════════════════════════════${N}"
+  echo -e " Versi terpasang : ${Y}$cur${N}"
+  echo -e " Versi terbaru   : $([[ -z "$latest" ]] && echo -e "${R}gagal dicek${N}" || echo -e "${G}$latest${N}")"
+  echo -e "${C}════════════════════════════════════${N}"
+  if newer "$latest" "$cur"; then
+    echo -e " ${Y}Ada versi baru.${N}"
+  else
+    echo -e " ${G}Script sudah versi terbaru (akan install ulang).${N}"
+  fi
+  echo
+  read -rp "$(echo -e " ${G}Lanjutkan update? (y/n) : ${N}")" y
+  [[ "$y" != y && "$y" != Y ]] && { echo -e " ${Y}Update dibatalkan${N}"; exit 0; }
+  do_update 0 "$latest"; rc=$?
+  [[ $rc == 0 ]] && echo -e "\n ${G}Update selesai: $(cat $ASD/version)${N}"
+  [[ $rc == 1 ]] && echo -e "\n ${R}Update gagal diunduh, tidak ada yang berubah${N}"
+  [[ $rc == 2 ]] && echo -e "\n ${R}Update gagal diverifikasi, sudah dikembalikan ke $cur${N}"
+  exit 0
+fi
+
 # ------------------ mode cron ------------------
 if [[ "$1" == "--check" || "$1" == "--auto" ]]; then
   latest=$(fetch_latest); [[ -z "$latest" ]] && exit 0
@@ -143,6 +168,13 @@ EOF
 chmod +x /usr/local/sbin/cas-update
 
 # perintah khusus owner: pindah channel (main = buyer, beta = uji coba)
+# jalan pintas update dari terminal: ketik  updatesc
+cat > /usr/local/sbin/updatesc <<'EOF'
+#!/bin/bash
+exec /usr/local/sbin/cas-update --quick
+EOF
+chmod +x /usr/local/sbin/updatesc
+
 cat > /usr/local/sbin/cas-channel <<'EOF'
 #!/bin/bash
 case $1 in
