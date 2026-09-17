@@ -1,5 +1,4 @@
-v1.8.4
-- Laporan User Login di Telegram mengikuti gaya Potato (header polos + judul bertanda kutip)
-- Perintah cepat: ketik updatesc untuk update (konfirmasi y/n)
-- Konfirmasi "Correct (y/n)" sebelum Delete, Renew, Lock, Unlock di semua protokol
-- Tampilan hasil ala Potato: LOCK/UNLOCKED/DELETE/RENEW Successfully
+v1.8.5
+- Notif Telegram: header diganti jadi IP/DOMAIN/ISP (tanpa baris CASSANOVA TUNNELING)
+- Notif Create/Recovery kini persis seperti tampilan akun di VPS (label & isi sama)
+- Judul aksi tetap bertanda kutip; berlaku VLESS/VMESS/TROJAN/SSH

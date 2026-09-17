@@ -12,9 +12,12 @@ apt install -y zip unzip >/dev/null 2>&1
 cat > /usr/local/lib/autoscript/notify.sh <<'EOF'
 # Header notif: nama script | domain | IP
 _cas_head(){
-  local I=/etc/autoscript/ipinfo.json ip
+  local I=/etc/autoscript/ipinfo.json ip isp
   ip=$(jq -r '.ip // "-"' $I 2>/dev/null)
-  echo "🖥 <b>CASSANOVA TUNNELING</b>"$'\n'"🌐 $(cat /etc/autoscript/domain 2>/dev/null) | $ip"
+  isp=$(jq -r '.org // "-"' $I 2>/dev/null | sed 's/^AS[0-9]* //')
+  echo "<pre>IP     : $ip
+DOMAIN : $(cat /etc/autoscript/domain 2>/dev/null)
+ISP    : $isp</pre>"
 }
 # kirim pesan Telegram (HTML). Baris baru pakai newline asli, bukan %0A.
 _cas_send(){

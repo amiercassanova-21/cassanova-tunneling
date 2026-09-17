@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.8.4
+#  CASSANOVA TUNNELING - UPDATE v1.8.5
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -301,21 +301,25 @@ show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (aku
   row(){ printf " ${G}%-14s${N}: %b\n" "$1" "$2"; }
   sec(){ echo -e "$L2"; printf "${Y}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$L2"; }
   if [[ "$notif" == notif || "$notif" == quote ]]; then
-    local body="<pre>Remarks   : $REM
-CITY      : $CITY
-ISP       : $ISP
-Domain    : $DOMAIN
-Port TLS  : 443,8443
-Port none : 80,8080
-Port any  : 2052,2053,8880
-id        : $ID
-Network   : ws,grpc,upgrade
-Path ws   : $WSPATH
-Service   : $PROTO-grpc
-Path up   : /up$PROTO
-Limit IP  : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")
-Kuota     : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
-Expired   : $exp</pre>"
+    local idlabel="id"; [[ $PROTO == trojan ]] && idlabel="Password"
+    local head="<pre>Remarks       : $REM
+CITY          : $CITY
+ISP           : $ISP
+Domain        : $DOMAIN
+Port TLS      : 443,8443
+Port none TLS : 80,8080
+Port any      : 2052,2053,8880
+$(printf '%-13s' "$idlabel") : $ID"
+    [[ $PROTO == vless ]] && head+=$'\n'"Encryption    : none"
+    [[ $PROTO == vmess ]] && head+=$'\n'"alterId       : 0"$'\n'"Security      : auto"
+    head+=$'\n'"Network       : ws,grpc,upgrade
+Path ws       : $WSPATH
+serviceName   : $PROTO-grpc
+Path upgrade  : /up$PROTO
+Limit IP      : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")
+Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
+Expired On    : $exp</pre>"
+    local body="$head"
     body+=$'\n'"<b>$UP WS TLS</b>"$'\n'"<code>$(mk_link ws 1)</code>"
     body+=$'\n'"<b>$UP WS NO TLS</b>"$'\n'"<code>$(mk_link ws 0)</code>"
     body+=$'\n'"<b>$UP GRPC</b>"$'\n'"<code>$(mk_link grpc 1)</code>"
@@ -921,7 +925,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.8.4" > /etc/autoscript/version
+echo "v1.8.5" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----
