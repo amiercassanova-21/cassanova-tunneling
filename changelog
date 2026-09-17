@@ -1,5 +1,4 @@
-v1.8.6
-- Notif Create/Recovery kini PERSIS seperti tampilan VPS (garis ════/────, tanpa tombol SALIN KODE)
-- Header IP/DOMAIN/ISP juga tanpa tombol salin
-- Recovery: judul bertanda kutip di atas blok akun
-- Berlaku VLESS/VMESS/TROJAN/SSH
+v1.9.1
+- Dukungan OS diperluas: Ubuntu 20.04/22.04/24.04/26.04 & Debian 11/12/13
+- OS lebih lama ditolak dengan pesan jelas
+- Penyesuaian paket & timezone agar mulus di Debian

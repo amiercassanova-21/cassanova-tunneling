@@ -9,30 +9,47 @@ RED='\e[31m'; GRN='\e[32m'; CYN='\e[36m'; NC='\e[0m'
 
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 . /etc/os-release
-[[ "$ID" != "ubuntu" ]] && echo -e "${RED}Script ini hanya untuk Ubuntu${NC}" && exit 1
+os_ok=0
+if [[ "$ID" == "ubuntu" ]]; then
+  # ambil versi mayor (mis. 20.04 -> 20)
+  vmaj=${VERSION_ID%%.*}
+  [[ "$vmaj" =~ ^[0-9]+$ && "$vmaj" -ge 20 ]] && os_ok=1
+elif [[ "$ID" == "debian" ]]; then
+  [[ "${VERSION_ID%%.*}" =~ ^[0-9]+$ && "${VERSION_ID%%.*}" -ge 11 ]] && os_ok=1
+fi
+if [[ "$os_ok" != 1 ]]; then
+  echo -e "${RED}OS tidak didukung: $PRETTY_NAME${NC}"
+  echo -e "${RED}Gunakan Ubuntu 20.04+ atau Debian 11+${NC}"
+  exit 1
+fi
 
 clear
 echo -e "${CYN}==============================================${NC}"
 echo -e "${CYN}      CASSANOVA TUNNELING - INSTALLER       ${NC}"
 echo -e "${CYN}==============================================${NC}"
-echo -e "Pastikan domain sudah diarahkan ke IP VPS ini"
-echo -e "(Cloudflare: mode DNS only / awan abu-abu)\n"
-read -rp "Masukkan domain : " DOMAIN
-[[ -z "$DOMAIN" ]] && echo -e "${RED}Domain tidak boleh kosong${NC}" && exit 1
 BRAND=cassanova
+if [[ "$CAS_NODOMAIN" == 1 && -n "$CAS_DOMAIN" ]]; then
+  # dipanggil bootstrap: domain & SSL sudah disiapkan
+  DOMAIN="$CAS_DOMAIN"
+else
+  echo -e "Pastikan domain sudah diarahkan ke IP VPS ini"
+  echo -e "(Cloudflare: mode DNS only / awan abu-abu)\n"
+  read -rp "Masukkan domain : " DOMAIN
+  [[ -z "$DOMAIN" ]] && echo -e "${RED}Domain tidak boleh kosong${NC}" && exit 1
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p /etc/autoscript/db /var/log/xray /var/www/html
 echo "$DOMAIN" > /etc/autoscript/domain
 echo "$BRAND"  > /etc/autoscript/brand
-echo "v1.8.6"  > /etc/autoscript/version
+echo "v1.9.1"  > /etc/autoscript/version
 touch /etc/autoscript/db/vless.db /etc/autoscript/db/vmess.db /etc/autoscript/db/trojan.db
 
 # ---------- Paket dasar ----------
 echo -e "${GRN}[1/6] Install paket dasar...${NC}"
 apt update -y
-apt install -y curl wget jq nginx vnstat socat cron at uuid-runtime bc net-tools lsof unzip ca-certificates
-timedatectl set-timezone Asia/Jakarta
+apt install -y curl wget jq nginx vnstat socat cron at uuid-runtime bc net-tools lsof unzip ca-certificates gnupg lsb-release
+timedatectl set-timezone Asia/Jakarta 2>/dev/null || ln -sf /usr/share/zoneinfo/Asia/Jakarta /etc/localtime
 systemctl enable --now vnstat atd cron
 
 # ---------- BBR & Swap ----------
@@ -82,6 +99,9 @@ cat > /usr/local/etc/xray/config.json <<'EOF'
 EOF
 
 # ---------- SSL ----------
+if [[ -s /etc/autoscript/xray.crt && -s /etc/autoscript/xray.key ]]; then
+  echo -e "${GRN}[4/6] SSL sudah tersedia (dari bootstrap), lewati.${NC}"
+else
 echo -e "${GRN}[4/6] Membuat sertifikat SSL...${NC}"
 systemctl stop nginx
 curl -s https://get.acme.sh | sh -s email=admin@$DOMAIN
@@ -94,6 +114,7 @@ curl -s https://get.acme.sh | sh -s email=admin@$DOMAIN
 if [[ ! -s /etc/autoscript/xray.crt ]]; then
   echo -e "${RED}SSL gagal dibuat. Cek pointing domain lalu install ulang.${NC}"
   exit 1
+fi
 fi
 
 # ---------- Nginx ----------
