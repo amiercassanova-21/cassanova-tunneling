@@ -1,2 +1,6 @@
-v1.9.4
-- Perbaikan tampilan LIST ACCOUNTS: baris SSH/OPENVPN tidak lagi turun ke bawah
+v1.9.6
+- Lisensi habis: SEMUA VPN dimatikan (xray/dropbear/ws-ssh/badvpn/nginx), menu terkunci
+- Tanggal exp inklusif: hari-H masih aktif, mati keesokan harinya
+- Diperpanjang: nyala otomatis dalam ~2 menit (cek berkala) tanpa aksi buyer
+- Perintah renewsc untuk nyala instan; buka menu juga auto-cek latar belakang
+- Pengaman anti false-lock: cek 2x & pertahankan status bila server tak terjangkau

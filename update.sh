@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.9.4
+#  CASSANOVA TUNNELING - UPDATE v1.9.6
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -706,8 +706,81 @@ accounts(){
 
 version_box(){
   echo -e "    ${B}┌──────────────────────────────────────┐${N}"
-  printf  "    ${B}│${N} ${G}%-12s${N}: ${O}%s${N}\n" "Version" "$VER" "Client Name" "$(hostname)" "Expiry In" "Lifetime"
+  local lclient lexp lleft
+  lclient=$(cat $ASD/license_client 2>/dev/null); [[ -z "$lclient" ]] && lclient="$(hostname)"
+  lexp=$(cat $ASD/license_exp 2>/dev/null)
+  if [[ "$lexp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    lleft=$(( ( $(date -d "$lexp" +%s) - $(date +%s) ) / 86400 ))
+    (( lleft < 0 )) && lleft=0
+    lexp="$lexp (${lleft} hari)"
+  else
+    lexp="Lifetime"
+  fi
+  printf  "    ${B}│${N} ${G}%-12s${N}: ${O}%s${N}\n" "Version" "$VER" "Client Name" "$lclient" "Expiry In" "$lexp"
   echo -e "    ${B}└──────────────────────────────────────┘${N}"
+}
+
+# ---- Lisensi ----
+CAS_SVC="xray cas-dropbear ws-ssh badvpn nginx"
+
+lic_services_stop(){
+  local sv
+  for sv in $CAS_SVC; do systemctl stop "$sv" >/dev/null 2>&1; done
+}
+lic_services_start(){
+  local sv
+  for sv in $CAS_SVC; do systemctl start "$sv" >/dev/null 2>&1; done
+}
+
+# panggil: license_check [--enforce]
+# --enforce: benar-benar stop/start layanan sesuai status (dipakai cron & renewsc)
+license_check(){
+  local enforce=0; [[ "$1" == "--enforce" ]] && enforce=1
+  local url ip out out2
+  url=$(cat $ASD/license_url 2>/dev/null); [[ -z "$url" ]] && return 0   # mode dev (tanpa lisensi)
+  ip=$(jq -r '.ip // empty' $ASD/ipinfo.json 2>/dev/null)
+  [[ -z "$ip" ]] && ip=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null)
+  [[ -z "$ip" ]] && return 0
+  out=$(curl -s --max-time 12 -G "$url/check" --data-urlencode "ip=$ip" 2>/dev/null)
+  [[ -z "$out" ]] && return 0   # server tak terjangkau -> pertahankan status lama (anti false-lock)
+
+  if echo "$out" | grep -q '"licensed":true'; then
+    echo "$out" | jq -r '.client // ""' > $ASD/license_client 2>/dev/null
+    echo "$out" | jq -r '.exp // ""'    > $ASD/license_exp 2>/dev/null
+    local prev=$(cat $ASD/license_state 2>/dev/null)
+    echo "ok" > $ASD/license_state
+    # kalau sebelumnya expired lalu kini aktif (baru diperpanjang) -> nyalakan lagi
+    if [[ "$prev" == "expired" ]]; then lic_services_start; fi
+    return 0
+  fi
+
+  if echo "$out" | grep -q '"licensed":false'; then
+    # pengaman: cek sekali lagi sebelum benar-benar mematikan (hindari false-positive)
+    sleep 3
+    out2=$(curl -s --max-time 12 -G "$url/check" --data-urlencode "ip=$ip" 2>/dev/null)
+    if ! echo "$out2" | grep -q '"licensed":false'; then return 0; fi
+    echo "expired" > $ASD/license_state
+    [[ $enforce == 1 ]] && lic_services_stop
+    return 1
+  fi
+  return 0
+}
+
+license_gate(){
+  # dipanggil di awal menu: kalau expired, tolak akses
+  [[ "$(cat $ASD/license_state 2>/dev/null)" == "expired" ]] || return 0
+  clear
+  echo -e "${R}════════════════════════════════════${N}"
+  echo -e "${R}        LISENSI TIDAK AKTIF         ${N}"
+  echo -e "${R}════════════════════════════════════${N}"
+  echo -e " Masa aktif lisensi VPS ini sudah habis."
+  echo -e " Semua layanan VPN dinonaktifkan."
+  echo -e ""
+  echo -e " Hubungi admin untuk perpanjangan."
+  echo -e " ${Y}Jika sudah diperpanjang, ketik: ${G}renewsc${N}"
+  echo -e "${R}════════════════════════════════════${N}"
+  echo; read -rp "Tekan Enter untuk keluar..."
+  exit 0
 }
 
 coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
@@ -736,13 +809,28 @@ set_bantime(){
   done
 }
 
+if [[ "$1" == "license" ]]; then
+  license_check --enforce; exit 0
+fi
+if [[ "$1" == "renew" ]]; then
+  echo -e "${G}Mengecek status lisensi...${N}"
+  license_check --enforce
+  if [[ "$(cat $ASD/license_state 2>/dev/null)" == "expired" ]]; then
+    echo -e "${R}Lisensi masih belum aktif. Pastikan sudah diperpanjang admin.${N}"
+  else
+    echo -e "${G}Lisensi aktif. Semua layanan dinyalakan.${N}"
+  fi
+  exit 0
+fi
 if [[ "$1" == "info" ]]; then
+  ( license_check --enforce >/dev/null 2>&1 & )
   dashboard; accounts; version_box
   echo -e "\n          ${G}to access use ${C}menu${G} command${N}\n"
   exit 0
 fi
 
 while true; do
+  license_gate
   dashboard; version_box
   top
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "1.)" "SSH" "6.)" "FEATURES"
@@ -792,6 +880,11 @@ echo -e "\n${B}═════════════════════�
 read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"
 EOF
 
+cat > /usr/local/sbin/renewsc <<'RSC'
+#!/bin/bash
+exec /usr/local/sbin/menu renew
+RSC
+chmod +x /usr/local/sbin/renewsc
 chmod +x /usr/local/sbin/menu /usr/local/sbin/m-xray /usr/local/sbin/running /usr/local/sbin/xray-guard
 
 # =====================================================
@@ -928,6 +1021,7 @@ EOF
 cat > /etc/cron.d/autoscript <<'EOF'
 5 0 * * * root /usr/local/sbin/m-xray vless --expire
 * * * * * root /usr/local/sbin/xray-guard
+*/2 * * * * root /usr/local/sbin/menu license
 EOF
 chmod 644 /etc/cron.d/autoscript
 
@@ -935,8 +1029,9 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.9.4" > /etc/autoscript/version
+echo "v1.9.6" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
+/usr/local/sbin/menu license >/dev/null 2>&1 || true
 
 # ---- Modul SSH ----
 echo -e "${GRN}[SSH] Memasang modul SSH...${NC}"
