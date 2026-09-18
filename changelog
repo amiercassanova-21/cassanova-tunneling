@@ -1,3 +1,2 @@
-v1.9.3
-- Perbaikan Dropbear di Ubuntu 24.04/26.04 & Debian 12/13 (service cas-dropbear)
-- Perbaikan tampilan LIST ACCOUNTS (kolom SSH/OPENVPN rapi)
+v1.9.4
+- Perbaikan tampilan LIST ACCOUNTS: baris SSH/OPENVPN tidak lagi turun ke bawah

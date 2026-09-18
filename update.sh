@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.9.3
+#  CASSANOVA TUNNELING - UPDATE v1.9.4
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -694,10 +694,13 @@ dashboard(){
 accounts(){
   local c1 c2 c3
   c1=$(grep -c . $ASD/db/vmess.db); c2=$(grep -c . $ASD/db/vless.db); c3=$(grep -c . $ASD/db/trojan.db)
-  local cs=$(grep -c . $ASD/db/ssh.db 2>/dev/null || echo 0)
+  local cs; cs=$(grep -c . $ASD/db/ssh.db 2>/dev/null); [[ "$cs" =~ ^[0-9]+$ ]] || cs=0
+  local row
   echo -e "      ${B}┌──────────────────────────────────┐${N}"
   echo -e "                ${G}LIST ACCOUNTS${N}"
-  printf  "        ${G}%-12s${N}: ${Y}%-3s${N} ${G}ACCOUNT${N}\n" "SSH/OPENVPN" "$cs" "VMESS" "$c1" "VLESS" "$c2" "TROJAN" "$c3"
+  for row in "SSH/OPENVPN:$cs" "VMESS:$c1" "VLESS:$c2" "TROJAN:$c3"; do
+    printf "        ${G}%-11s${N} : ${Y}%-3s${N} ${G}ACCOUNT${N}\n" "${row%%:*}" "${row##*:}"
+  done
   echo -e "      ${B}└──────────────────────────────────┘${N}"
 }
 
@@ -932,7 +935,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.9.3" > /etc/autoscript/version
+echo "v1.9.4" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----
