@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.9.1
+#  CASSANOVA TUNNELING - UPDATE v1.9.3
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -697,7 +697,7 @@ accounts(){
   local cs=$(grep -c . $ASD/db/ssh.db 2>/dev/null || echo 0)
   echo -e "      ${B}┌──────────────────────────────────┐${N}"
   echo -e "                ${G}LIST ACCOUNTS${N}"
-  printf  "        ${G}%-14s${N}: ${Y}%-4s${N}${G}ACCOUNT${N}\n" "SSH/OPENVPN" "$cs" "VMESS" "$c1" "VLESS" "$c2" "TROJAN" "$c3"
+  printf  "        ${G}%-12s${N}: ${Y}%-3s${N} ${G}ACCOUNT${N}\n" "SSH/OPENVPN" "$cs" "VMESS" "$c1" "VLESS" "$c2" "TROJAN" "$c3"
   echo -e "      ${B}└──────────────────────────────────┘${N}"
 }
 
@@ -780,7 +780,7 @@ echo -e "${B}══════════════════════�
 printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"
 echo -e "${B}════════════════════════════════════${N}\n"
 printf "${G}%-16s${N}: %b\n" \
-  "SSH" "$(st ssh)" "DROPBEAR" "$(st dropbear)" "OPENVPN" "$(st openvpn)" \
+  "SSH" "$(st ssh)" "DROPBEAR" "$(st cas-dropbear)" "OPENVPN" "$(st openvpn)" \
   "SQUID" "$(st squid)" "NGINX" "$(st nginx)" "BADVPN" "$(st badvpn)" \
   "VMESS" "$(st xray)" "VLESS" "$(st xray)" "TROJAN" "$(st xray)" \
   "SlowDNS" "$(st slowdns)" "WEB" "$(st nginx)" \
@@ -932,7 +932,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.9.1" > /etc/autoscript/version
+echo "v1.9.3" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 
 # ---- Modul SSH ----

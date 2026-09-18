@@ -1,4 +1,3 @@
-v1.9.1
-- Dukungan OS diperluas: Ubuntu 20.04/22.04/24.04/26.04 & Debian 11/12/13
-- OS lebih lama ditolak dengan pesan jelas
-- Penyesuaian paket & timezone agar mulus di Debian
+v1.9.3
+- Perbaikan Dropbear di Ubuntu 24.04/26.04 & Debian 12/13 (service cas-dropbear)
+- Perbaikan tampilan LIST ACCOUNTS (kolom SSH/OPENVPN rapi)

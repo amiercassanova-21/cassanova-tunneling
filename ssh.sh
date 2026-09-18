@@ -18,6 +18,11 @@ apt install -y dropbear stunnel4 cmake make gcc git build-essential fail2ban >/d
 
 # ---------- Dropbear ----------
 echo -e "${GRN}[SSH 2/5] Dropbear...${NC}"
+[[ -s $ASD/banner.txt ]] || echo -e "\nCASSANOVA TUNNELING\n" > $ASD/banner.txt
+grep -q '^/bin/false' /etc/shells || echo '/bin/false' >> /etc/shells
+grep -q '^/usr/sbin/nologin' /etc/shells || echo '/usr/sbin/nologin' >> /etc/shells
+
+# tetap tulis /etc/default/dropbear (dipakai versi lama / kompatibilitas)
 cat > /etc/default/dropbear <<'EOF'
 NO_START=0
 DROPBEAR_PORT=143
@@ -25,12 +30,32 @@ DROPBEAR_EXTRA_ARGS="-p 109"
 DROPBEAR_BANNER="/etc/autoscript/banner.txt"
 DROPBEAR_RECEIVE_WINDOW=65536
 EOF
-[[ -s $ASD/banner.txt ]] || echo -e "\nCASSANOVA TUNNELING\n" > $ASD/banner.txt
-grep -q '^/bin/false' /etc/shells || echo '/bin/false' >> /etc/shells
-grep -q '^/usr/sbin/nologin' /etc/shells || echo '/usr/sbin/nologin' >> /etc/shells
-systemctl enable dropbear >/dev/null 2>&1
-if ! systemctl is-active --quiet dropbear; then systemctl start dropbear
-elif [[ "$(fh /etc/default/dropbear)" != "$H_DB" ]]; then svc_restart dropbear; fi
+
+# Dropbear v2022+ (Ubuntu 24.04/Debian 12+) pakai socket-activation yg bentrok dgn cara lama.
+# Buat service sendiri yang eksplisit -> jalan sama di semua OS.
+systemctl disable --now dropbear.socket >/dev/null 2>&1 || true
+systemctl disable --now dropbear.service >/dev/null 2>&1 || true
+DBBIN=$(command -v dropbear || echo /usr/sbin/dropbear)
+# host keys
+mkdir -p /etc/dropbear
+[[ -f /etc/dropbear/dropbear_rsa_host_key ]] || dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key >/dev/null 2>&1
+[[ -f /etc/dropbear/dropbear_ed25519_host_key ]] || dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1
+cat > /etc/systemd/system/cas-dropbear.service <<EOF
+[Unit]
+Description=Cassanova Dropbear SSH
+After=network.target
+[Service]
+Type=simple
+ExecStart=$DBBIN -F -E -p 143 -p 109 -b /etc/autoscript/banner.txt
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable cas-dropbear >/dev/null 2>&1
+if ! systemctl is-active --quiet cas-dropbear; then systemctl restart cas-dropbear
+elif [[ "$(fh /etc/default/dropbear)" != "$H_DB" ]]; then svc_restart cas-dropbear; fi
 
 # ---------- BadVPN UDP ----------
 echo -e "${GRN}[SSH 3/5] BadVPN UDP...${NC}"
