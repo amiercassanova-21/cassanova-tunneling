@@ -194,7 +194,7 @@ chmod +x /usr/local/sbin/cas-channel
 
 # cek update tiap jam, menit acak per VPS (agar 80+ VPS tidak serentak ke GitHub)
 if [[ ! -f /etc/cron.d/cas-update ]] || grep -q '^17 \*/6' /etc/cron.d/cas-update; then
-  echo "$((RANDOM % 60)) * * * * root /usr/local/sbin/cas-update --check" > /etc/cron.d/cas-update
+  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "$((RANDOM % 60)) * * * * root /usr/local/sbin/cas-update --check"; } > /etc/cron.d/cas-update
   chmod 644 /etc/cron.d/cas-update
 fi
 [[ -f /etc/autoscript/autoupdate ]] || echo off > /etc/autoscript/autoupdate

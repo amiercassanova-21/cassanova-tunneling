@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.11.0
+#  CASSANOVA TUNNELING - UPDATE v1.11.1
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -39,6 +39,9 @@ mkdir -p /usr/local/lib/autoscript /etc/autoscript/db /etc/autoscript/usage /var
 # =====================================================
 echo -e "${GRN}[2/7] Library...${NC}"
 cat > /usr/local/lib/autoscript/lib.sh <<'EOF'
+# PATH lengkap: cron memakai PATH minimal, sedangkan xray ada di /usr/local/bin.
+# Tanpa baris ini, xray-guard gagal diam-diam dari cron (kuota & limit IP tidak jalan).
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}
 # Cassanova Tunneling - shared library
 [[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
 type cas_notify &>/dev/null || cas_notify(){ :; }
@@ -1093,6 +1096,7 @@ cat > /etc/logrotate.d/xray <<'EOF'
 EOF
 
 cat > /etc/cron.d/autoscript <<'EOF'
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 5 0 * * * root /usr/local/sbin/m-xray vless --expire
 * * * * * root /usr/local/sbin/xray-guard
 */2 * * * * root /usr/local/sbin/menu license
@@ -1103,7 +1107,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.11.0" > /etc/autoscript/version
+echo "v1.11.1" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 /usr/local/sbin/menu license >/dev/null 2>&1 || true
 

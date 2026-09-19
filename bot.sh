@@ -161,17 +161,18 @@ backup_now(){
 # ubah interval menit -> baris cron (90 menit butuh 2 baris)
 cron_write(){ # $1=menit  $2=file cron  $3=perintah
   local m=$1 f=$2 cmd=$3
+  echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > "$f"   # cron perlu PATH lengkap agar xray/jq terbaca
   case $m in
-    30)   echo "*/30 * * * * root $cmd" > "$f" ;;
-    60)   echo "0 * * * * root $cmd" > "$f" ;;
+    30)   echo "*/30 * * * * root $cmd" >> "$f" ;;
+    60)   echo "0 * * * * root $cmd" >> "$f" ;;
     90)   { echo "0 0,3,6,9,12,15,18,21 * * * root $cmd";
-            echo "30 1,4,7,10,13,16,19,22 * * * root $cmd"; } > "$f" ;;
-    120)  echo "0 */2 * * * root $cmd" > "$f" ;;
-    180)  echo "0 */3 * * * root $cmd" > "$f" ;;
-    360)  echo "0 */6 * * * root $cmd" > "$f" ;;
-    720)  echo "0 */12 * * * root $cmd" > "$f" ;;
-    1440) echo "0 3 * * * root $cmd" > "$f" ;;
-    *)    echo "0 * * * * root $cmd" > "$f" ;;
+            echo "30 1,4,7,10,13,16,19,22 * * * root $cmd"; } >> "$f" ;;
+    120)  echo "0 */2 * * * root $cmd" >> "$f" ;;
+    180)  echo "0 */3 * * * root $cmd" >> "$f" ;;
+    360)  echo "0 */6 * * * root $cmd" >> "$f" ;;
+    720)  echo "0 */12 * * * root $cmd" >> "$f" ;;
+    1440) echo "0 3 * * * root $cmd" >> "$f" ;;
+    *)    echo "0 * * * * root $cmd" >> "$f" ;;
   esac
   chmod 644 "$f"
 }
@@ -339,16 +340,16 @@ if [[ "$BI" == "0" ]]; then
   rm -f /etc/cron.d/cas-backup            # buyer mematikan auto backup
 elif [[ -z "$BI" ]]; then
   echo 1440 > /etc/autoscript/backup_interval
-  echo "0 3 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup
+  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 3 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup
   chmod 644 /etc/cron.d/cas-backup 2>/dev/null
 elif [[ ! -s /etc/cron.d/cas-backup ]]; then
   # pengaturan ada tapi file cron hilang -> bangun ulang sesuai pilihan
   case $BI in
-    60)   echo "0 * * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
-    180)  echo "0 */3 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
-    360)  echo "0 */6 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
-    720)  echo "0 */12 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
-    *)    echo "0 3 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
+    60)   { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 * * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
+    180)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */3 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
+    360)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */6 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
+    720)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */12 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
+    *)    { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 3 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
   esac
   chmod 644 /etc/cron.d/cas-backup 2>/dev/null
 fi
