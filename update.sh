@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.19.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.19.1"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -1151,7 +1151,19 @@ cat > /usr/local/sbin/cas-reality <<'EOF'
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ASD=/etc/autoscript
 CFG=/usr/local/etc/xray/config.json
+LOG=/var/log/cas-reality.log
 b64u(){ base64 -w0 | tr '+/' '-_' | tr -d '='; }
+
+# --ensure: dipakai cron. Kalau inbound Reality hilang (mis. gagal sesaat saat
+# update), dipasang ulang. Dibatasi 6 percobaan supaya tidak mencoba selamanya.
+if [[ "$1" == "--ensure" ]]; then
+  jq -e '[.inbounds[]|select(.tag=="vless-reality")]|length > 0' $CFG >/dev/null 2>&1 && { rm -f $ASD/reality_try; exit 0; }
+  t=$(cat $ASD/reality_try 2>/dev/null); [[ "$t" =~ ^[0-9]+$ ]] || t=0
+  (( t >= 6 )) && exit 0
+  echo $((t+1)) > $ASD/reality_try
+  echo "$(date '+%F %T') inbound Reality tidak ada, coba pasang (percobaan $((t+1)))" >> $LOG
+  exec "$0" --restart
+fi
 
 port=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
 [[ "$port" =~ ^[0-9]+$ ]] && (( port > 0 && port < 65536 )) || port=2087
@@ -1207,9 +1219,21 @@ jq --argjson port "$port" --arg dest "$dest" --arg priv "$priv" --arg sid "$sid"
 if [[ ! -s "$tmp" ]] || ! jq -e . "$tmp" >/dev/null 2>&1; then
   rm -f "$tmp"; echo "Gagal menyusun config Reality, tidak ada yang diubah." >&2; exit 1
 fi
-if ! xray run -test -config "$tmp" >/dev/null 2>&1; then
-  rm -f "$tmp"; echo "Config Reality tidak lolos uji Xray, tidak ada yang diubah." >&2; exit 1
+# diuji sampai 2x: saat update berjalan pernah gagal sesaat padahal config benar
+ok=0
+for _try in 1 2; do
+  if xray run -test -config "$tmp" >>$LOG 2>&1; then ok=1; break; fi
+  echo "$(date '+%F %T') uji ke-$_try gagal" >> $LOG
+  sleep 2
+done
+if (( ok == 0 )); then
+  cp -f "$tmp" /tmp/cas-reality-gagal.json 2>/dev/null
+  rm -f "$tmp"
+  echo "Config Reality tidak lolos uji Xray. Pesan aslinya ada di $LOG" >&2
+  echo "Tidak ada yang diubah, protokol lain tetap normal." >&2
+  exit 1
 fi
+rm -f $ASD/reality_try
 if cmp -s "$tmp" "$CFG"; then rm -f "$tmp"; exit 0; fi      # tidak ada perubahan
 cp -f "$CFG" "$CFG.bak-reality"
 mv "$tmp" "$CFG"
@@ -1223,6 +1247,7 @@ fi
 exit 0
 EOF
 chmod +x /usr/local/sbin/cas-reality
+rm -f /etc/autoscript/reality_try   # tiap update memberi 6 kesempatan baru bagi cron --ensure
 /usr/local/sbin/cas-reality || echo -e "${RED}Reality dilewati (lihat pesan di atas), protokol lain tidak terpengaruh.${NC}"
 
 DOMAIN=$(cat /etc/autoscript/domain)
@@ -1454,6 +1479,18 @@ fi
 EOF
 chmod +x /usr/local/sbin/cas-ssl-pending
 
+cat > /etc/logrotate.d/cassanova <<'EOF'
+/var/log/cas-ssl.log /var/log/cas-update.log /var/log/cas-reality.log {
+    weekly
+    rotate 2
+    maxsize 5M
+    missingok
+    notifempty
+    compress
+    copytruncate
+}
+EOF
+
 cat > /etc/logrotate.d/xray <<'EOF'
 /var/log/xray/*.log {
     daily
@@ -1473,6 +1510,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 */2 * * * * root /usr/local/sbin/menu license
 */10 * * * * root /usr/local/sbin/cas-ssl-pending
 0 9 * * * root /usr/local/sbin/cas-license-warn
+*/10 * * * * root /usr/local/sbin/cas-reality --ensure
 EOF
 chmod 644 /etc/cron.d/autoscript
 

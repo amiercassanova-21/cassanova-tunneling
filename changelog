@@ -1,14 +1,10 @@
-v1.19.0
-- Baru: VLESS REALITY di port 2087. Tidak butuh domain maupun SSL, dan jauh
-  lebih sulit dideteksi karena meniru handshake situs lain (default
-  www.microsoft.com). Setiap akun VLESS yang sudah ada otomatis dapat config
-  Reality, tanpa perlu membuat akun baru.
-- Config Reality ikut muncul di output akun, baik di terminal maupun Telegram,
-  sebagai kotak salin tersendiri.
-- Menu baru: FEATURES -> 13. Setelan VLESS Reality, untuk mengubah port,
-  mengubah domain kamuflase, atau membuat ulang kunci.
-- Menu baru: FEATURES -> 12. Cek Port VPS, menampilkan port mana saja yang
-  terbuka beserta layanannya. Bisa juga lewat perintah: cekport
-- Pengaman: config Reality hanya dipasang kalau lolos uji "xray run -test".
-  Kalau gagal, config lama dipertahankan sehingga protokol lain tidak
-  mungkin ikut mati karena Reality.
+v1.19.1
+- Perbaikan: saat updatesc, Reality bisa gagal dipasang karena uji config
+  gagal sesaat, padahal config-nya benar. Sekarang diuji sampai 2 kali, dan
+  pesan asli dari Xray disimpan di /var/log/cas-reality.log supaya bisa
+  ditelusuri (sebelumnya dibuang sehingga tidak bisa dilacak).
+- Reality kini memasang dirinya sendiri: kalau inbound-nya belum ada, cron
+  mencoba memasangnya tiap 10 menit (maksimal 6 kali, dan dihitung ulang
+  setiap kali updatesc dijalankan).
+- Log script sendiri (cas-ssl, cas-update, cas-reality) kini ikut dipangkas
+  logrotate, jadi tidak tumbuh tanpa batas.
