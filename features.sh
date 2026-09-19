@@ -211,7 +211,7 @@ chmod +x /usr/local/sbin/backup
 # jalan pintas: ketik  restore  -> buka menu restore
 cat > /usr/local/sbin/restore <<'EOF'
 #!/bin/bash
-exec /usr/local/sbin/m-feature --restore
+exec /usr/local/sbin/m-feature --restore "$1"
 EOF
 chmod +x /usr/local/sbin/restore
 
@@ -232,6 +232,7 @@ r "adddomain"         "ganti / pasang domain baru"
 echo -e "\n ${Y}BACKUP${N}"
 r "backup"            "buat backup baru (+ kirim ke Telegram)"
 r "restore"           "buka menu restore backup"
+r "restore <link>"    "restore langsung dari link, tanpa upload"
 echo -e "\n ${Y}AKUN XRAY (vless / vmess / trojan)${N}"
 r "addvless"          "buat akun VLESS baru"
 r "renewvless <kode>" "perpanjang akun (kuota ikut direset)"
@@ -312,9 +313,123 @@ backup_vps(){
   pause
 }
 
+# ---- baca ringkasan isi file backup tanpa mengekstraknya ----
+restore_info(){ # $1 = file zip -> set RB_DOMAIN RB_IP RB_DATE RB_ACC
+  local f="$1" p c
+  RB_DOMAIN=$(unzip -p "$f" etc/autoscript/domain 2>/dev/null | tr -d '[:space:]')
+  RB_IP=$(unzip -p "$f" etc/autoscript/ipinfo.json 2>/dev/null | jq -r '.ip // empty' 2>/dev/null)
+  RB_DATE=$(unzip -l "$f" 2>/dev/null | awk '$NF=="etc/autoscript/domain"{print $2" "$3; exit}')
+  RB_ACC=""
+  for p in vless vmess trojan ssh; do
+    c=$(unzip -p "$f" etc/autoscript/db/$p.db 2>/dev/null | grep -c .)
+    RB_ACC+="${p^^} ${c:-0}  "
+  done
+}
+
+# ---- proses restore satu file backup (ringkasan -> kode konfirmasi -> jalan) ----
+restore_do(){ # $1 = file zip
+  local f="$1" code inp RD IP dip exp
+  [[ -s "$f" ]] || { msg "${R}File backup tidak ditemukan${N}"; return 1; }
+  unzip -tq "$f" >/dev/null 2>&1 || { msg "${R}File rusak atau bukan zip yang benar${N}"; return 1; }
+  unzip -l "$f" 2>/dev/null | grep -q 'etc/autoscript/' \
+    || { msg "${R}Ini bukan file backup Cassanova Tunneling${N}"; return 1; }
+
+  restore_info "$f"
+  header "KONFIRMASI RESTORE"
+  printf " ${G}%-9s${N}: ${O}%s${N}\n" "File"    "$(basename "$f")"
+  printf " ${G}%-9s${N}: ${O}%s${N}\n" "Domain"  "${RB_DOMAIN:-"-"}"
+  printf " ${G}%-9s${N}: ${O}%s${N}\n" "IP asal" "${RB_IP:-"-"}"
+  printf " ${G}%-9s${N}: ${O}%s${N}\n" "Dibuat"  "${RB_DATE:-"-"}"
+  printf " ${G}%-9s${N}: ${O}%s${N}\n" "Akun"    "${RB_ACC:-"-"}"
+  echo -e "$LINE"
+  echo -e " ${R}Config VPS ini akan DITIMPA oleh isi backup di atas.${N}"
+  code=$(head -c 400 /dev/urandom 2>/dev/null | LC_ALL=C tr -dc 'A-HJ-NP-Z2-9' | head -c 6)
+  [[ ${#code} -eq 6 ]] || code=$(date +%s%N | md5sum | LC_ALL=C tr -dc 'A-HJ-NP-Z2-9' | head -c 6)
+  [[ ${#code} -eq 6 ]] || code="RESTOR"
+  echo -e " Ketik kode ini untuk melanjutkan : ${Y}${code}${N}"
+  echo -e " ${Y}(salah / kosong = dibatalkan)${N}"
+  echo; read -rp "$(echo -e " ${G}Kode : ${N}")" inp
+  [[ "$inp" != "$code" ]] && { msg "${Y}Kode tidak sama, restore dibatalkan${N}"; return 1; }
+
+  echo -e "\n${G}Mengembalikan data...${N}"
+  unzip -oq "$f" -d / || { msg "${R}Gagal extract backup${N}"; return 1; }
+
+  # Backup membawa ipinfo.json dari VPS asal, dan file itulah yang dipakai
+  # untuk cek lisensi. Tanpa ditulis ulang, VPS ini ikut terkunci.
+  curl -s --max-time 10 ipinfo.io/json > $ASD/ipinfo.new 2>/dev/null
+  if jq -e '.ip' $ASD/ipinfo.new >/dev/null 2>&1; then
+    mv -f $ASD/ipinfo.new $ASD/ipinfo.json
+  else
+    rm -f $ASD/ipinfo.new
+    IP=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null)
+    [[ -n "$IP" ]] && printf '{"ip":"%s"}\n' "$IP" > $ASD/ipinfo.json
+  fi
+  IP=$(jq -r '.ip // empty' $ASD/ipinfo.json 2>/dev/null)
+  echo -e " ${G}IP VPS ini dicatat ulang : ${Y}${IP:-gagal dideteksi}${N}"
+
+  echo -e " ${G}Menyegarkan status lisensi...${N}"
+  /usr/local/sbin/menu license >/dev/null 2>&1
+
+  systemctl restart xray nginx cas-dropbear ws-ssh badvpn 2>/dev/null
+
+  # SSL untuk domain hasil restore: ditandai perlu diterbitkan, lalu dicoba
+  # sekarang. Kalau pointing belum diarahkan ke VPS ini, cron menyelesaikan
+  # sendiri tiap 10 menit sehingga buyer cukup mengubah A record saja.
+  RD=$(cat $ASD/domain 2>/dev/null)
+  rm -f $ASD/ssl_try $ASD/ssl_last $ASD/ssl_wait $ASD/ssl_orange; : > $ASD/ssl_pending
+  echo -e " ${G}Menyiapkan SSL untuk ${Y}${RD:-"-"}${G}...${N}"
+  /usr/local/sbin/cas-ssl-pending >/dev/null 2>&1
+
+  dip=$(getent hosts "$RD" 2>/dev/null | awk '{print $1}' | head -1)
+  header "RESTORE SELESAI"
+  printf " ${G}%-20s${N}: ${O}%s${N}\n" "Domain hasil restore" "${RD:-"-"}"
+  printf " ${G}%-20s${N}: ${O}%s${N}\n" "IP VPS ini"           "${IP:-"-"}"
+  printf " ${G}%-20s${N}: ${O}%s${N}\n" "Pointing sekarang"    "${dip:-"tidak resolve"}"
+  echo -e "$LINE"
+  if [[ -n "$RD" && "$dip" == "$IP" && ! -f $ASD/ssl_pending ]]; then
+    echo -e " ${G}Pointing sudah benar dan SSL sudah diperbarui.${N}"
+    echo -e " ${G}Tidak ada lagi yang perlu dilakukan. VPS siap dipakai.${N}"
+  elif [[ -n "$RD" && "$dip" == "$IP" ]]; then
+    echo -e " ${Y}Pointing sudah benar, tetapi SSL belum berhasil diterbitkan.${N}"
+    echo -e " Dicoba ulang otomatis tiap 10 menit. Log: /var/log/cas-ssl.log"
+  else
+    echo -e " ${Y}LANGKAH TERAKHIR (cukup ini saja):${N}\n"
+    echo -e "  Di Cloudflare, arahkan A record"
+    echo -e "  ${C}${RD:-domain}${N}  ke  ${C}${IP:-IP VPS ini}${N}"
+    echo -e "  Wajib ${Y}ABU-ABU${N} (DNS only / proxy OFF)\n"
+    echo -e " Setelah itu tidak perlu mengetik apa pun lagi."
+    echo -e " SSL diterbitkan otomatis maksimal 10 menit setelah pointing benar."
+    exp=$(openssl x509 -in $ASD/xray.crt -noout -enddate 2>/dev/null | cut -d= -f2)
+    if [[ -n "$exp" ]]; then
+      echo -e " Sertifikat dari backup masih berlaku sampai ${G}$(date -d "$exp" +%F 2>/dev/null || echo "$exp")${N},"
+      echo -e " jadi koneksi bisa langsung dipakai begitu pointing berubah."
+    fi
+  fi
+  echo -e "$LINE"
+  pause
+}
+
+# ---- restore langsung dari link (tanpa upload manual ke VPS) ----
+restore_url(){ # $1 = link http/https
+  local u="$1" f base
+  header "RESTORE DARI LINK"
+  [[ "$u" =~ ^https?://[^[:space:]]+$ ]] \
+    || { msg "${R}Link tidak valid. Harus mulai dengan http:// atau https://${N}"; return 1; }
+  mkdir -p /root/backup
+  base=$(basename "${u%%\?*}"); [[ "$base" == *.zip ]] || base="backup-$(date +%F_%H%M%S).zip"
+  f=/root/backup/$base
+  echo -e " Sumber : ${C}$u${N}"
+  echo -e " Simpan : ${C}$f${N}\n"
+  if ! curl -fL --max-time 600 --retry 2 -o "$f" "$u"; then
+    rm -f "$f"; msg "${R}Gagal mengunduh dari link tersebut${N}"; return 1
+  fi
+  echo -e "\n ${G}Unduhan selesai (${Y}$(du -h "$f" 2>/dev/null | cut -f1)${G})${N}"
+  restore_do "$f"
+}
+
 restore_vps(){
   header "RESTORE CONFIGURATION"
-  local list=() f i=0 n mode=${1:-normal}
+  local list=() f i=0 n mode=${1:-normal} url
   if [[ "$mode" == "pre" ]]; then
     # daftar backup pre-update (untuk mundur ke versi sebelumnya)
     while IFS= read -r f; do list+=("$f"); done < <(ls -1t /root/backup/pre-update-*.zip 2>/dev/null)
@@ -325,62 +440,28 @@ restore_vps(){
     while IFS= read -r f; do list+=("$f"); done < <(ls -1t /root/backup/*.zip /root/*.zip 2>/dev/null | grep -v '/pre-update-')
     if [[ ${#list[@]} == 0 ]]; then
       echo -e " ${Y}Tidak ada file backup di /root/backup atau /root${N}"
-      echo -e " Upload file backup dari Telegram ke /root dulu."
-      echo -e "\n Ketik ${C}p${N} untuk melihat backup pre-update (mundur versi)."
+      echo -e " Upload file backup ke /root lewat SFTP, atau pakai link.\n"
+      echo -e " ${C}l${N}   Restore dari link (tempel URL)"
+      echo -e " ${C}p${N}   Lihat backup pre-update (mundur versi)"
       echo; read -rp "Pilihan : " n
+      [[ "$n" == l || "$n" == L ]] && { echo; read -rp "Tempel link : " url; restore_url "$url"; return; }
       [[ "$n" == p || "$n" == P ]] && { restore_vps pre; return; }
       return
     fi
   fi
   for f in "${list[@]}"; do i=$((i+1)); printf " ${C}%-3s${N} %s\n" "$i." "$(basename "$f")"; done
   echo
-  [[ "$mode" == "normal" ]] && echo -e " ${C}p${N}   Lihat backup pre-update (mundur versi)"
-  echo; read -rp "Nomor file : " n
-  if [[ "$mode" == "normal" && ( "$n" == p || "$n" == P ) ]]; then restore_vps pre; return; fi
-  [[ "$n" =~ ^[0-9]+$ ]] && (( n>=1 && n<=${#list[@]} )) || { msg "${R}Nomor salah${N}"; return; }
-  f=${list[$((n-1))]}
-  read -rp "Restore $(basename "$f")? Config sekarang akan ditimpa (y/t) : " y
-  [[ "$y" != y ]] && return
-  unzip -oq "$f" -d / || { msg "${R}Gagal extract backup${N}"; return; }
-
-  # --- auto-domain setelah restore (B4) ---
-  local RD IP dip
-  RD=$(cat $ASD/domain 2>/dev/null)
-  IP=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null)
-  echo -e "\n${G}Memeriksa domain hasil restore...${N}"
-  echo -e " Domain backup : ${Y}${RD:-"-"}${N}"
-  echo -e " IP VPS ini    : ${Y}$IP${N}"
-
-  if [[ -n "$RD" ]]; then
-    dip=$(getent hosts "$RD" 2>/dev/null | awk '{print $1}' | head -1)
-    if [[ "$dip" == "$IP" ]]; then
-      echo -e " ${G}Pointing sudah benar ke VPS ini${N}"
-      # perbarui SSL bila kedaluwarsa / kurang dari 7 hari
-      if ! openssl x509 -in $ASD/xray.crt -noout -checkend 604800 >/dev/null 2>&1; then
-        echo -e " ${Y}SSL kedaluwarsa/segera habis, memperbarui...${N}"
-        systemctl stop nginx
-        /root/.acme.sh/acme.sh --issue -d "$RD" --standalone -k ec-256 --force >/tmp/acme-res.log 2>&1
-        /root/.acme.sh/acme.sh --install-cert -d "$RD" --ecc \
-          --fullchain-file $ASD/xray.crt --key-file $ASD/xray.key >/dev/null 2>&1
-        systemctl start nginx
-        if openssl x509 -in $ASD/xray.crt -noout -checkend 86400 >/dev/null 2>&1; then
-          echo -e " ${G}SSL diperbarui${N}"
-        else
-          echo -e " ${R}SSL gagal diperbarui. Cek pointing & port 80.${N}"
-          tail -n 6 /tmp/acme-res.log 2>/dev/null
-        fi
-      else
-        echo -e " ${G}SSL masih berlaku${N}"
-      fi
-    else
-      echo -e " ${R}Domain $RD mengarah ke ${dip:-"(tidak resolve)"}, bukan IP VPS ini.${N}"
-      echo -e " ${Y}Pointing domain ke $IP (Cloudflare: DNS only / ABU-ABU),${N}"
-      echo -e " ${Y}lalu jalankan: ${G}adddomain${N}"
-    fi
+  if [[ "$mode" == "normal" ]]; then
+    echo -e " ${C}l${N}   Restore dari link (tempel URL)"
+    echo -e " ${C}p${N}   Lihat backup pre-update (mundur versi)"
   fi
-
-  systemctl restart xray nginx cas-dropbear ws-ssh badvpn 2>/dev/null
-  msg "${G}Restore selesai${N}"
+  echo; read -rp "Nomor file : " n
+  if [[ "$mode" == "normal" ]]; then
+    [[ "$n" == l || "$n" == L ]] && { echo; read -rp "Tempel link : " url; restore_url "$url"; return; }
+    [[ "$n" == p || "$n" == P ]] && { restore_vps pre; return; }
+  fi
+  [[ "$n" =~ ^[0-9]+$ ]] && (( n>=1 && n<=${#list[@]} )) || { msg "${R}Nomor salah${N}"; return; }
+  restore_do "${list[$((n-1))]}"
 }
 
 start_stop(){
@@ -499,7 +580,7 @@ coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
 
 # mode non-interaktif: adddomain
 if [[ "$1" == "--domain" ]]; then change_domain; exit 0; fi
-if [[ "$1" == "--restore" ]]; then restore_vps; exit 0; fi
+if [[ "$1" == "--restore" ]]; then if [[ -n "$2" ]]; then restore_url "$2"; else restore_vps; fi; exit 0; fi
 
 while true; do
   header "FEATURES"

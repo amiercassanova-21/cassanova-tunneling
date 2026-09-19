@@ -1177,6 +1177,102 @@ if nginx -t >/dev/null 2>&1; then systemctl reload nginx; else rm -f $CFR; fi
 # perpanjangan SSL otomatis lewat webroot (nginx tidak perlu dimatikan)
 ACF=/root/.acme.sh/${DOMAIN}_ecc/${DOMAIN}.conf
 [[ -f $ACF ]] && sed -i "s#^Le_Webroot=.*#Le_Webroot='/var/www/html'#" $ACF
+# sertifikat hanya dipakai nginx (xray menerima trafik polos), jadi cukup reload
+# nginx setelah acme.sh memperbarui: halus, koneksi user tidak terputus.
+if [[ -f $ACF ]]; then
+  RCB=$(printf '%s' 'systemctl reload nginx' | base64 -w0 2>/dev/null)
+  if [[ -n "$RCB" ]]; then
+    sed -i '/^Le_ReloadCmd=/d' $ACF
+    echo "Le_ReloadCmd='__ACME_BASE64__START_${RCB}__ACME_BASE64__END_'" >> $ACF
+  fi
+fi
+
+# ---- SSL untuk domain hasil restore (dipakai setelah restore backup) ----
+# Kalau pointing domain belum diarahkan ke VPS ini, script ini diam saja dan
+# dicoba lagi oleh cron tiap 10 menit. Begitu A record diubah ke IP VPS ini,
+# SSL terbit sendiri tanpa buyer perlu mengetik apa pun.
+cat > /usr/local/sbin/cas-ssl-pending <<'EOF'
+#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ASD=/etc/autoscript
+LOG=/var/log/cas-ssl.log
+[[ -f $ASD/ssl_pending ]] || exit 0
+exec 9>/run/cas-ssl.lock
+flock -n 9 || exit 0
+
+tg(){ # $1 = teks
+  local BOT_TOKEN="" CHAT_ID=""
+  . $ASD/bot 2>/dev/null
+  [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && return 0
+  curl -s --max-time 15 -o /dev/null \
+    --data-urlencode "chat_id=$CHAT_ID" --data-urlencode "parse_mode=HTML" \
+    --data-urlencode "text=$1" "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
+}
+
+D=$(cat $ASD/domain 2>/dev/null); [[ -z "$D" ]] && exit 0
+IP=$(jq -r '.ip // empty' $ASD/ipinfo.json 2>/dev/null)
+[[ -z "$IP" ]] && IP=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null)
+[[ -z "$IP" ]] && exit 0
+DIP=$(getent hosts "$D" 2>/dev/null | awk '{print $1}' | head -1)
+
+# ---- pointing belum mengarah ke VPS ini: tunggu, jangan hitung sebagai percobaan ----
+if [[ "$DIP" != "$IP" ]]; then
+  W=$(cat $ASD/ssl_wait 2>/dev/null); [[ "$W" =~ ^[0-9]+$ ]] || W=0
+  echo $((W+1)) > $ASD/ssl_wait
+  # dalam 2 jam pertama, periksa apakah domain masih ORANGE (diproxy) di Cloudflare
+  if (( W < 12 )) && [[ -n "$DIP" && ! -f $ASD/ssl_orange ]]; then
+    if curl -sI --max-time 10 "http://$D" 2>/dev/null | grep -qi '^server:[[:space:]]*cloudflare'; then
+      : > $ASD/ssl_orange
+      echo "$(date '+%F %T') $D masih ORANGE (diproxy Cloudflare), SSL tidak bisa terbit" >> $LOG
+      tg "⚠️ <b>Domain masih ORANGE di Cloudflare</b>"$'\n'"<code>Domain :</code> $D"$'\n'"<code>IP VPS :</code> $IP"$'\n'"Ubah awan jadi ABU-ABU (DNS only) dan arahkan ke IP di atas. SSL terbit sendiri setelah itu."
+    fi
+  fi
+  exit 0
+fi
+rm -f $ASD/ssl_wait $ASD/ssl_orange
+
+# ---- pointing sudah benar: terbitkan SSL ----
+TRY=$(cat $ASD/ssl_try 2>/dev/null); [[ "$TRY" =~ ^[0-9]+$ ]] || TRY=0
+(( TRY >= 20 )) && exit 0
+# setelah 3 percobaan, beri jeda 30 menit agar tidak kena rate limit Let's Encrypt
+NOW=$(date +%s); LAST=$(cat $ASD/ssl_last 2>/dev/null); [[ "$LAST" =~ ^[0-9]+$ ]] || LAST=0
+(( TRY >= 3 )) && (( NOW - LAST < 1800 )) && exit 0
+echo "$NOW" > $ASD/ssl_last
+TRY=$((TRY+1)); echo "$TRY" > $ASD/ssl_try
+echo "=== $(date '+%F %T') percobaan $TRY terbitkan SSL $D ($IP) ===" >> $LOG
+
+mkdir -p /var/www/html
+[[ -x /root/.acme.sh/acme.sh ]] || curl -s https://get.acme.sh | sh -s email=admin@$D >>$LOG 2>&1
+/root/.acme.sh/acme.sh --set-default-ca --server letsencrypt >>$LOG 2>&1
+
+ok=0
+# 1) webroot: nginx tetap hidup, koneksi user tidak terputus
+/root/.acme.sh/acme.sh --issue -d "$D" -w /var/www/html -k ec-256 --force >>$LOG 2>&1 && ok=1
+# 2) standalone (nginx mati beberapa detik) hanya dipakai pada 3 percobaan pertama
+if (( ok == 0 )) && (( TRY <= 3 )); then
+  echo "webroot gagal, coba standalone" >> $LOG
+  systemctl stop nginx >/dev/null 2>&1
+  /root/.acme.sh/acme.sh --issue -d "$D" --standalone -k ec-256 --force >>$LOG 2>&1 && ok=1
+  systemctl start nginx >/dev/null 2>&1
+fi
+if (( ok == 0 )); then
+  echo "gagal menerbitkan SSL" >> $LOG
+  (( TRY == 20 )) && tg "⚠️ <b>SSL belum bisa diterbitkan</b>"$'\n'"<code>Domain :</code> $D"$'\n'"Percobaan otomatis dihentikan setelah 20 kali."$'\n'"Cek /var/log/cas-ssl.log lalu jalankan: <code>adddomain</code>"
+  exit 1
+fi
+
+/root/.acme.sh/acme.sh --install-cert -d "$D" --ecc \
+  --fullchain-file $ASD/xray.crt --key-file $ASD/xray.key \
+  --reloadcmd "systemctl reload nginx" >>$LOG 2>&1
+
+if openssl x509 -in $ASD/xray.crt -noout -checkend 86400 >/dev/null 2>&1; then
+  rm -f $ASD/ssl_pending $ASD/ssl_try $ASD/ssl_last $ASD/ssl_wait $ASD/ssl_orange
+  systemctl reload nginx >/dev/null 2>&1
+  echo "SSL berhasil" >> $LOG
+  tg "✅ <b>SSL siap, VPS sudah bisa dipakai</b>"$'\n'"<code>Domain :</code> $D"$'\n'"<code>IP     :</code> $IP"$'\n'"Tidak ada lagi yang perlu dilakukan."
+fi
+EOF
+chmod +x /usr/local/sbin/cas-ssl-pending
 
 cat > /etc/logrotate.d/xray <<'EOF'
 /var/log/xray/*.log {
@@ -1195,6 +1291,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 5 0 * * * root /usr/local/sbin/m-xray vless --expire
 * * * * * root /usr/local/sbin/xray-guard
 */2 * * * * root /usr/local/sbin/menu license
+*/10 * * * * root /usr/local/sbin/cas-ssl-pending
 EOF
 chmod 644 /etc/cron.d/autoscript
 
