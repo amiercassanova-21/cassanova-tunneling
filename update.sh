@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.17.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.18.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -859,13 +859,36 @@ license_check(){
   [[ -z "$ip" ]] && ip=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null)
   [[ -z "$ip" ]] && return 0
   out=$(curl -s --max-time 12 -G "$url/check" --data-urlencode "ip=$ip" 2>/dev/null)
-  [[ -z "$out" ]] && return 0   # server tak terjangkau -> pertahankan status lama (anti false-lock)
+  if [[ -z "$out" ]]; then
+    # Server tak terjangkau. Tetap toleran terhadap gangguan sesaat, TAPI ada
+    # batasnya: kalau gagal terus melewati masa tenggang, VPS tetap dikunci.
+    # Tanpa batas ini, memblokir domain lisensi = pakai selamanya tanpa bayar.
+    local gdays lastok now fails flimit
+    gdays=$(cat $ASD/license_grace 2>/dev/null); [[ "$gdays" =~ ^[0-9]+$ ]] && (( gdays >= 1 )) || gdays=3
+    now=$(date +%s)
+    lastok=$(cat $ASD/license_ok_at 2>/dev/null); [[ "$lastok" =~ ^[0-9]+$ ]] || lastok=0
+    (( lastok == 0 )) && { echo "$now" > $ASD/license_ok_at; return 0; }
+    # hitungan kegagalan: tidak bisa dikelabui dengan memundurkan jam VPS
+    fails=$(cat $ASD/license_fail 2>/dev/null); [[ "$fails" =~ ^[0-9]+$ ]] || fails=0
+    fails=$((fails+1)); echo "$fails" > $ASD/license_fail
+    flimit=$(( gdays * 720 ))     # cron tiap 2 menit -> 720 kali per hari
+    if (( fails >= flimit )) || (( now - lastok > gdays * 86400 )); then
+      echo "expired" > $ASD/license_state
+      if [[ $enforce == 1 ]]; then
+        lic_services_stop
+        cas_notify "⛔ <b>Layanan dihentikan</b>"$'\n'"Server lisensi tidak bisa dihubungi selama lebih dari $gdays hari."$'\n'"Pastikan VPS terhubung internet, lalu ketik <code>renewsc</code>. Bila perlu hubungi admin." 2>/dev/null
+      fi
+      return 1
+    fi
+    return 0
+  fi
 
   if echo "$out" | grep -q '"licensed":true'; then
     echo "$out" | jq -r '.client // ""' > $ASD/license_client 2>/dev/null
     echo "$out" | jq -r '.exp // ""'    > $ASD/license_exp 2>/dev/null
     local prev=$(cat $ASD/license_state 2>/dev/null)
     echo "ok" > $ASD/license_state
+    date +%s > $ASD/license_ok_at; echo 0 > $ASD/license_fail
     # kalau sebelumnya expired lalu kini aktif (baru diperpanjang) -> nyalakan lagi
     if [[ "$prev" == "expired" ]]; then lic_services_start; fi
     return 0
@@ -877,6 +900,7 @@ license_check(){
     out2=$(curl -s --max-time 12 -G "$url/check" --data-urlencode "ip=$ip" 2>/dev/null)
     if ! echo "$out2" | grep -q '"licensed":false'; then return 0; fi
     echo "expired" > $ASD/license_state
+    date +%s > $ASD/license_ok_at; echo 0 > $ASD/license_fail
     [[ $enforce == 1 ]] && lic_services_stop
     return 1
   fi
@@ -1189,6 +1213,63 @@ fi
 # Kalau pointing domain belum diarahkan ke VPS ini, script ini diam saja dan
 # dicoba lagi oleh cron tiap 10 menit. Begitu A record diubah ke IP VPS ini,
 # SSL terbit sendiri tanpa buyer perlu mengetik apa pun.
+# ---- peringatan masa aktif lisensi ke buyer (H-7, H-3, H-1, hari-H) ----
+# Dikirim lewat bot milik buyer sendiri, terlepas dari setelan notifikasi
+# akun, karena ini menyangkut hidup-matinya layanan mereka.
+cat > /usr/local/sbin/cas-license-warn <<'EOF'
+#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ASD=/etc/autoscript
+[[ -s $ASD/license_url ]] || exit 0                     # mode dev, tanpa lisensi
+EXP=$(cat $ASD/license_exp 2>/dev/null)
+[[ "$EXP" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || exit 0  # Lifetime / belum diketahui
+[[ "$EXP" == "2099-12-31" ]] && exit 0
+
+LEFT=$(( ( $(date -d "$EXP" +%s) - $(date -d "$(date +%F)" +%s) ) / 86400 ))
+AMB=""
+case $LEFT in 7) AMB=7 ;; 3) AMB=3 ;; 1) AMB=1 ;; 0) AMB=0 ;; esac
+(( LEFT < 0 )) && AMB=x
+[[ -z "$AMB" ]] && exit 0
+
+# jangan kirim dua kali untuk ambang yang sama
+[[ "$(cat $ASD/license_warned 2>/dev/null)" == "$EXP:$AMB" ]] && exit 0
+
+BOT_TOKEN=""; CHAT_ID=""
+. $ASD/bot 2>/dev/null
+[[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && exit 0
+
+case $AMB in
+  7) SISA="habis <b>7 hari lagi</b>" ;;
+  3) SISA="habis <b>3 hari lagi</b>" ;;
+  1) SISA="habis <b>besok</b>" ;;
+  0) SISA="<b>habis hari ini</b>" ;;
+  x) SISA="<b>sudah habis</b> dan layanan sudah dihentikan" ;;
+esac
+IP=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
+D=$(cat $ASD/domain 2>/dev/null)
+L="━━━━━━━━━━━━━━━━━━━━"
+TXT="⏳ <b>MASA AKTIF SCRIPT</b>
+$L
+<code>Domain  :</code> $D
+<code>IP      :</code> $IP
+<code>Berakhir:</code> $EXP
+$L
+Masa aktif script Anda $SISA.
+Segera hubungi admin untuk perpanjangan agar
+layanan VPN tidak terhenti.
+$L
+<i>Setelah diperpanjang admin, layanan aktif
+otomatis dalam ±2 menit. Bila perlu ketik</i> <code>renewsc</code>"
+
+if curl -s --max-time 20 -o /dev/null \
+     --data-urlencode "chat_id=$CHAT_ID" --data-urlencode "parse_mode=HTML" \
+     --data-urlencode "text=$TXT" \
+     "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"; then
+  echo "$EXP:$AMB" > $ASD/license_warned
+fi
+EOF
+chmod +x /usr/local/sbin/cas-license-warn
+
 cat > /usr/local/sbin/cas-ssl-pending <<'EOF'
 #!/bin/bash
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -1290,6 +1371,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 * * * * * root /usr/local/sbin/xray-guard
 */2 * * * * root /usr/local/sbin/menu license
 */10 * * * * root /usr/local/sbin/cas-ssl-pending
+0 9 * * * root /usr/local/sbin/cas-license-warn
 EOF
 chmod 644 /etc/cron.d/autoscript
 

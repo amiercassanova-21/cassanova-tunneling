@@ -1,9 +1,11 @@
-v1.17.0
-- Output akun di Telegram (saat create, trial, dan recovery) kini terbagi
-  jadi kotak-kotak terpisah, sehingga bisa disalin satu per satu:
-  rincian akun sendiri, dan tiap config (WS TLS, WS non-TLS, gRPC,
-  Upgrade TLS, Upgrade non-TLS) punya kotak salin masing-masing.
-  Sebelumnya sekali ketuk menyalin seluruh isi pesan.
-- Rincian akun yang disalin kini bersih tanpa garis pembatas.
-- Setiap bagian diberi ikon supaya mudah dibedakan saat digeser.
-- Tampilan di terminal VPS tidak berubah.
+v1.18.0
+- Celah bypass lisensi ditutup. Dulu kalau server lisensi tidak bisa dihubungi,
+  status lama dipertahankan tanpa batas, sehingga memblokir domain lisensi sama
+  dengan pakai selamanya. Sekarang ada masa tenggang 3 hari: gangguan sesaat
+  tetap ditoleransi, tapi kalau gagal terus melewati batas, layanan dikunci.
+  Tahan terhadap jam VPS yang dimundurkan (memakai hitungan kegagalan juga).
+- Buyer kini diperingatkan sendiri lewat bot di VPS-nya saat masa aktif script
+  tinggal 7 hari, 3 hari, besok, dan hari-H. Dikirim sekali per ambang, dan
+  aktif lagi otomatis setelah diperpanjang.
+- Data lisensi kini dibackup otomatis ke Telegram admin setiap hari Senin,
+  lewat cron Worker yang sudah ada. Perintah /backup manual tetap ada.
