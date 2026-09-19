@@ -75,7 +75,8 @@ do_update(){ # $1 = auto(1/0) ; return 0 sukses
     return 2
   fi
   echo "$(cat $ASD/version)" > $ASD/latest
-  find /root/backup -name 'pre-update-*.zip' -mtime +7 -delete 2>/dev/null
+  # simpan 3 backup pre-update terbaru (cukup untuk mundur beberapa versi)
+  ls -1t /root/backup/pre-update-*.zip 2>/dev/null | tail -n +4 | xargs -r rm -f
   return 0
 }
 
@@ -251,11 +252,29 @@ backup_vps(){
 
 restore_vps(){
   header "RESTORE CONFIGURATION"
-  local list=() f i=0 n
-  while IFS= read -r f; do list+=("$f"); done < <(ls -1t /root/backup/*.zip /root/*.zip 2>/dev/null)
-  [[ ${#list[@]} == 0 ]] && { echo -e " ${Y}Tidak ada file .zip di /root/backup atau /root${N}"; echo -e " Upload file backup dari Telegram ke /root dulu."; pause; return; }
+  local list=() f i=0 n mode=${1:-normal}
+  if [[ "$mode" == "pre" ]]; then
+    # daftar backup pre-update (untuk mundur ke versi sebelumnya)
+    while IFS= read -r f; do list+=("$f"); done < <(ls -1t /root/backup/pre-update-*.zip 2>/dev/null)
+    [[ ${#list[@]} == 0 ]] && { echo -e " ${Y}Belum ada backup pre-update${N}"; pause; return; }
+    echo -e " ${Y}Backup otomatis sebelum update (untuk mundur versi)${N}\n"
+  else
+    # daftar backup biasa saja, pre-update disembunyikan agar tidak membingungkan
+    while IFS= read -r f; do list+=("$f"); done < <(ls -1t /root/backup/*.zip /root/*.zip 2>/dev/null | grep -v '/pre-update-')
+    if [[ ${#list[@]} == 0 ]]; then
+      echo -e " ${Y}Tidak ada file backup di /root/backup atau /root${N}"
+      echo -e " Upload file backup dari Telegram ke /root dulu."
+      echo -e "\n Ketik ${C}p${N} untuk melihat backup pre-update (mundur versi)."
+      echo; read -rp "Pilihan : " n
+      [[ "$n" == p || "$n" == P ]] && { restore_vps pre; return; }
+      return
+    fi
+  fi
   for f in "${list[@]}"; do i=$((i+1)); printf " ${C}%-3s${N} %s\n" "$i." "$(basename "$f")"; done
+  echo
+  [[ "$mode" == "normal" ]] && echo -e " ${C}p${N}   Lihat backup pre-update (mundur versi)"
   echo; read -rp "Nomor file : " n
+  if [[ "$mode" == "normal" && ( "$n" == p || "$n" == P ) ]]; then restore_vps pre; return; fi
   [[ "$n" =~ ^[0-9]+$ ]] && (( n>=1 && n<=${#list[@]} )) || { msg "${R}Nomor salah${N}"; return; }
   f=${list[$((n-1))]}
   read -rp "Restore $(basename "$f")? Config sekarang akan ditimpa (y/t) : " y

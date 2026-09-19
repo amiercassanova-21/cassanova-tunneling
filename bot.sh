@@ -289,7 +289,8 @@ cat > /usr/local/sbin/cas-backup-make <<'EOF'
 D=$(cat /etc/autoscript/domain)
 IP=$(jq -r '.ip // empty' /etc/autoscript/ipinfo.json 2>/dev/null); [[ -z "$IP" ]] && IP=$(curl -s --max-time 5 ifconfig.me)
 mkdir -p /root/backup
-find /root/backup -name '*.zip' -mtime +3 -delete 2>/dev/null
+# simpan 5 backup rutin terbaru saja (pre-update punya aturan sendiri, jangan disentuh)
+ls -1t /root/backup/*.zip 2>/dev/null | grep -v '/pre-update-' | tail -n +6 | xargs -r rm -f
 f=/root/backup/${D}-${IP}-$(date +%H_%M_%S).zip
 cd / && zip -rq "$f" FILES_HERE 2>/dev/null
 echo "$f"

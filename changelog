@@ -1,9 +1,7 @@
-v1.12.0
-- PERBAIKAN: akun ter-lock padahal hanya 1 perangkat.
-  Penyebab: IP operator seluler (CGNAT) berganti sendiri, sehingga 1 perangkat
-  terbaca sebagai 2 IP dalam rentang deteksi.
-  * Jendela deteksi dipersempit dari 2 menit -> 60 detik
-  * Akun baru dikunci bila pelanggaran menetap (default 2x berturut-turut)
-  * Menu baru: Set Sensitivitas Lock IP (Ketat / Normal / Longgar)
-- Notifikasi Multi Login kini menampilkan IP UNIK + waktu terakhir,
-  bukan baris log berulang yang membingungkan
+v1.12.1
+- Backup tidak lagi menumpuk: hanya 5 backup terbaru yang disimpan
+  (sebelumnya berbasis umur file, jumlahnya bisa membengkak)
+- Backup pre-update dipisah: disimpan 3 terbaru, cukup untuk mundur beberapa versi
+- Perbaikan: penghapusan backup rutin dulu ikut menghapus file pre-update
+- Menu Restore kini hanya menampilkan backup biasa agar tidak membingungkan.
+  Backup pre-update tetap bisa dibuka dengan menekan "p" bila perlu mundur versi.

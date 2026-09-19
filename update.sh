@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.12.0
+#  CASSANOVA TUNNELING - UPDATE v1.12.1
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -1140,7 +1140,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.12.0" > /etc/autoscript/version
+echo "v1.12.1" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 /usr/local/sbin/menu license >/dev/null 2>&1 || true
 
