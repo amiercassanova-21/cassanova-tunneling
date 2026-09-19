@@ -343,6 +343,7 @@ renew(){
   new=$(date -d "$base +$d days" +%F)
   lock_db; sset "$U" 2 "$new"; chage -E "$(date -d "$new" +%Y-%m-%d)" "$U" 2>/dev/null
   usermod -U "$U" 2>/dev/null; [[ "$(sf "$U" 4)" != active ]] && sset "$U" 4 active
+  rm -f $ASD/usage/ssh/$U   # reset kuota agar terbaca dari nol
   unlock_db
   cas_notify_quote "Renew/Extend User" "<pre>User       : $U
 Added      : $d Days

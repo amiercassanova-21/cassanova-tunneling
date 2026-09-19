@@ -158,31 +158,83 @@ backup_now(){
   fi
 }
 
+# ubah interval menit -> baris cron (90 menit butuh 2 baris)
+cron_write(){ # $1=menit  $2=file cron  $3=perintah
+  local m=$1 f=$2 cmd=$3
+  case $m in
+    30)   echo "*/30 * * * * root $cmd" > "$f" ;;
+    60)   echo "0 * * * * root $cmd" > "$f" ;;
+    90)   { echo "0 0,3,6,9,12,15,18,21 * * * root $cmd";
+            echo "30 1,4,7,10,13,16,19,22 * * * root $cmd"; } > "$f" ;;
+    120)  echo "0 */2 * * * root $cmd" > "$f" ;;
+    180)  echo "0 */3 * * * root $cmd" > "$f" ;;
+    360)  echo "0 */6 * * * root $cmd" > "$f" ;;
+    720)  echo "0 */12 * * * root $cmd" > "$f" ;;
+    1440) echo "0 3 * * * root $cmd" > "$f" ;;
+    *)    echo "0 * * * * root $cmd" > "$f" ;;
+  esac
+  chmod 644 "$f"
+}
+fmt_int(){ # tampilkan menit dalam bahasa manusia
+  case $1 in 0) echo "OFF";; 30) echo "tiap 30 menit";; 60) echo "tiap 1 jam";;
+    90) echo "tiap 1,5 jam";; 120) echo "tiap 2 jam";; 180) echo "tiap 3 jam";;
+    360) echo "tiap 6 jam";; 720) echo "tiap 12 jam";; 1440) echo "tiap 24 jam (03:00)";;
+    *) echo "tiap $1 menit";; esac
+}
+
+set_backup(){
+  load; [[ -z "$BOT_TOKEN" ]] && { msg "${R}Buat bot dulu (menu 1)${N}"; return; }
+  header "JADWAL AUTO BACKUP"
+  local cur; cur=$(cat $ASD/backup_interval 2>/dev/null || echo 1440)
+  echo -e " Jadwal sekarang : ${Y}$(fmt_int "$cur")${N}\n"
+  echo -e " ${C}1.)${N} Tiap 1 jam"
+  echo -e " ${C}2.)${N} Tiap 3 jam"
+  echo -e " ${C}3.)${N} Tiap 6 jam"
+  echo -e " ${C}4.)${N} Tiap 12 jam"
+  echo -e " ${C}5.)${N} Tiap 24 jam (03:00)"
+  echo -e " ${C}6.)${N} Matikan auto backup"
+  echo -e " ${C}7.)${N} Backup sekarang"
+  echo -e " ${C}8.)${N} Kembali\n"
+  read -rp "Pilih : " o
+  local m
+  case $o in
+    1) m=60 ;; 2) m=180 ;; 3) m=360 ;; 4) m=720 ;; 5) m=1440 ;;
+    6) echo 0 > $ASD/backup_interval; rm -f /etc/cron.d/cas-backup; msg "${G}Auto backup dimatikan${N}"; return ;;
+    7) backup_now; return ;;
+    *) return ;;
+  esac
+  echo $m > $ASD/backup_interval
+  cron_write "$m" /etc/cron.d/cas-backup /usr/local/sbin/cas-autobackup
+  msg "${G}Auto backup dijalankan $(fmt_int $m)${N}"
+}
+
 set_report(){
   load; [[ -z "$BOT_TOKEN" ]] && { msg "${R}Buat bot dulu (menu 1)${N}"; return; }
   header "LAPORAN USER LOGIN"
   local cur; cur=$(cat $ASD/report_interval 2>/dev/null || echo 0)
-  echo -e " Interval sekarang : ${Y}$([[ "$cur" == 0 ]] && echo OFF || echo "tiap $cur menit")${N}\n"
+  echo -e " Interval sekarang : ${Y}$(fmt_int "$cur")${N}\n"
   echo -e " ${C}1.)${N} Tiap 30 menit"
   echo -e " ${C}2.)${N} Tiap 1 jam"
-  echo -e " ${C}3.)${N} Tiap 3 jam"
-  echo -e " ${C}4.)${N} Tiap 6 jam"
-  echo -e " ${C}5.)${N} Tiap 12 jam"
-  echo -e " ${C}6.)${N} Matikan laporan"
-  echo -e " ${C}7.)${N} Kirim laporan sekarang"
-  echo -e " ${C}8.)${N} Kembali\n"
+  echo -e " ${C}3.)${N} Tiap 1,5 jam"
+  echo -e " ${C}4.)${N} Tiap 2 jam"
+  echo -e " ${C}5.)${N} Tiap 3 jam"
+  echo -e " ${C}6.)${N} Tiap 6 jam"
+  echo -e " ${C}7.)${N} Tiap 12 jam"
+  echo -e " ${C}8.)${N} Tiap 24 jam"
+  echo -e " ${C}9.)${N} Matikan laporan"
+  echo -e " ${C}10.)${N} Kirim laporan sekarang"
+  echo -e " ${C}11.)${N} Kembali\n"
   read -rp "Pilih : " o
-  local m cronl
+  local m
   case $o in
-    1) m=30 ;; 2) m=60 ;; 3) m=180 ;; 4) m=360 ;; 5) m=720 ;;
-    6) echo 0 > $ASD/report_interval; rm -f /etc/cron.d/cas-report; msg "${G}Laporan dimatikan${N}"; return ;;
-    7) echo -e "${Y}Mengirim...${N}"; /usr/local/sbin/cas-report --manual; msg "${G}Laporan dikirim, cek Telegram${N}"; return ;;
+    1) m=30 ;; 2) m=60 ;; 3) m=90 ;; 4) m=120 ;; 5) m=180 ;; 6) m=360 ;; 7) m=720 ;; 8) m=1440 ;;
+    9) echo 0 > $ASD/report_interval; rm -f /etc/cron.d/cas-report; msg "${G}Laporan dimatikan${N}"; return ;;
+    10) echo -e "${Y}Mengirim...${N}"; /usr/local/sbin/cas-report --manual; msg "${G}Laporan dikirim, cek Telegram${N}"; return ;;
     *) return ;;
   esac
   echo $m > $ASD/report_interval
-  if (( m < 60 )); then cronl="*/$m * * * *"; else cronl="0 */$((m/60)) * * *"; fi
-  echo "$cronl root /usr/local/sbin/cas-report" > /etc/cron.d/cas-report; chmod 644 /etc/cron.d/cas-report
-  msg "${G}Laporan user login dikirim tiap $m menit${N}"
+  cron_write "$m" /etc/cron.d/cas-report /usr/local/sbin/cas-report
+  msg "${G}Laporan user login dikirim $(fmt_int $m)${N}"
 }
 
 change_bot(){
@@ -208,18 +260,20 @@ while true; do
   echo -e " ${C}2.)${N}  Notification from BOT (on/off)"
   echo -e " ${C}3.)${N}  Backup VPS from BOT"
   echo -e " ${C}4.)${N}  Change BOT API & CHATID"
-  echo -e " ${C}5.)${N}  Laporan User Login"
-  echo -e " ${C}6.)${N}  Back to Menu"
+  echo -e " ${C}5.)${N}  Laporan User Login (interval)"
+  echo -e " ${C}6.)${N}  Jadwal Auto Backup"
+  echo -e " ${C}7.)${N}  Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
-  read -rp "$(echo -e "${G}Select From Options [1-6 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-7 or x] : ${N}")" opt
   case $opt in
     1) make_bot ;;
     2) toggle_notify ;;
     3) backup_now ;;
     4) change_bot ;;
     5) set_report ;;
-    6) exit 0 ;;
+    6) set_backup ;;
+    7) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
@@ -279,7 +333,24 @@ curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
   "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
 EOF
 chmod +x /usr/local/sbin/cas-autobackup
-echo "0 3 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup
-chmod 644 /etc/cron.d/cas-backup 2>/dev/null
+# jadwal auto backup: hormati pilihan buyer, jangan ditimpa saat update
+BI=$(cat /etc/autoscript/backup_interval 2>/dev/null)
+if [[ "$BI" == "0" ]]; then
+  rm -f /etc/cron.d/cas-backup            # buyer mematikan auto backup
+elif [[ -z "$BI" ]]; then
+  echo 1440 > /etc/autoscript/backup_interval
+  echo "0 3 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup
+  chmod 644 /etc/cron.d/cas-backup 2>/dev/null
+elif [[ ! -s /etc/cron.d/cas-backup ]]; then
+  # pengaturan ada tapi file cron hilang -> bangun ulang sesuai pilihan
+  case $BI in
+    60)   echo "0 * * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
+    180)  echo "0 */3 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
+    360)  echo "0 */6 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
+    720)  echo "0 */12 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
+    *)    echo "0 3 * * * root /usr/local/sbin/cas-autobackup" > /etc/cron.d/cas-backup ;;
+  esac
+  chmod 644 /etc/cron.d/cas-backup 2>/dev/null
+fi
 
 echo -e "${GRN}Modul Setup Bot selesai.${NC}"

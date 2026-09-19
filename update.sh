@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.10.1
+#  CASSANOVA TUNNELING - UPDATE v1.11.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -532,7 +532,9 @@ renew(){
   [[ "$base" < "$today" ]] && base=$today
   new=$(date -d "$base +$d days" +%F)
   db_set $PROTO "$U" 2 "$new"
+  # reset kuota: hapus catatan lokal + kosongkan counter di Xray agar benar-benar dari nol
   rm -f $ASD/usage/$PROTO/$U
+  xray api statsquery --server=$API -pattern "user>>>$PROTO.$U>>>" -reset >/dev/null 2>&1
   st=$(db_field $PROTO "$U" 6)
   if [[ "$st" == "quota" ]]; then xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"; db_set $PROTO "$U" 6 active; fi
   unlock_db
@@ -1101,7 +1103,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.10.1" > /etc/autoscript/version
+echo "v1.11.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 /usr/local/sbin/menu license >/dev/null 2>&1 || true
 
