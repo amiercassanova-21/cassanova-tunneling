@@ -1,9 +1,8 @@
-v1.10.0
-- BARU: Halaman Cek Akun Pelanggan di https://<domain>/cek
-  * Pelanggan cek sendiri masa aktif, sisa hari, kuota terpakai, limit IP
-  * Xray (VLESS/VMESS/TROJAN) dicek pakai UUID/password -> aman dari tebak-tebakan nama
-  * SSH dicek pakai username (data minimal)
-  * Tampilan responsive untuk HP, brand mengikuti Set Brand Name
-  * Batas 15 permintaan/menit per IP, layanan read-only (tidak bisa mengubah data)
-- Link halaman tampil di menu Information System
-- Service cek-akun bisa dimatikan lewat menu Start/Stop Service
+v1.10.1
+- Output akun (Create/Trial/Recovery) kini menampilkan link CEK MASA AKTIF
+  beserta cara pakainya, di terminal maupun notifikasi Telegram
+- Menu "Check Config" dirombak jadi CHECK CONFIG & AKUN:
+  * Status ringkas: Config Xray OK/ERROR, Xray, Nginx, link cek akun
+  * Jika config error, detail penyebabnya ditampilkan ringkas
+  * Bisa pilih akun untuk melihat detail (status, sisa hari, kuota, limit IP)
+- Perbaikan perhitungan sisa hari (akun expired tidak lagi tampil "0 hari lagi")

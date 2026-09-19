@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.10.0
+#  CASSANOVA TUNNELING - UPDATE v1.10.1
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -293,6 +293,7 @@ mk_link(){ # net(ws|up|grpc) tls(1|0)  -> pakai variabel ID & REM
 
 show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (akun penuh)
   local ipl q CITY ISP notif=$4 ntitle=${5:-"$UP Dibuat"} L2="${B}────────────────────────────────────${N}"
+  local idlabel="id"; [[ $PROTO == trojan ]] && idlabel="Password"
   REM=$1; ID=$2
   local exp=$3
   ipl=$(db_field $PROTO "$REM" 4); q=$(db_field $PROTO "$REM" 5)
@@ -303,7 +304,6 @@ show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (aku
   if [[ "$notif" == notif || "$notif" == quote ]]; then
     local BR="────────────────────────────────"
     local EQ="════════════════════════════════"
-    local idlabel="id"; [[ $PROTO == trojan ]] && idlabel="Password"
     local info="$EQ
            $UP ACCOUNT
 $EQ
@@ -331,6 +331,14 @@ $(lnk "$UP WS NO TLS" "$(mk_link ws 0)")
 $(lnk "$UP GRPC" "$(mk_link grpc 1)")
 $(lnk "$UP Upgrade TLS" "$(mk_link up 1)")
 $(lnk "$UP Upgrade NO TLS" "$(mk_link up 0)")
+$BR
+       CEK MASA AKTIF
+$BR
+https://$DOMAIN/cek
+
+Buka link di atas, pilih $UP,
+lalu tempel $idlabel akun ini untuk
+melihat sisa masa aktif & kuota.
 $BR</code>"
     if [[ "$notif" == quote ]]; then cas_notify_quote "$ntitle" "$body"; else cas_notify_raw "🆕 <b>$ntitle</b>"$'\n'"$body"; fi
   fi
@@ -358,7 +366,63 @@ $BR</code>"
   sec "$UP GRPC";            mk_link grpc 1
   sec "$UP Upgrade TLS";     mk_link up 1
   sec "$UP Upgrade NO TLS";  mk_link up 0
+  sec "CEK MASA AKTIF"
+  echo -e " ${C}https://$DOMAIN/cek${N}"
+  echo
+  echo -e " ${G}Cara pakai (untuk pelanggan):${N}"
+  echo -e " 1. Buka link di atas lewat browser HP"
+  echo -e " 2. Pilih jenis akun: ${Y}$UP${N}"
+  echo -e " 3. Tempel ${Y}$idlabel${N} akun ini di kolom isian"
+  echo -e " Akan tampil sisa masa aktif, kuota & limit IP."
   echo -e "$L2"
+}
+
+check_config(){
+  header "CHECK CONFIG & AKUN"
+  local cfgout cfgok=1
+  cfgout=$(xray run -test -config $CFG 2>&1) || cfgok=0
+  printf " ${G}%-13s${N}: %b\n" "Config Xray" "$([[ $cfgok == 1 ]] && echo "${G}OK${N}" || echo "${R}ERROR${N}")"
+  printf " ${G}%-13s${N}: %b\n" "Xray"  "$(systemctl is-active --quiet xray  && echo "${G}running${N}" || echo "${R}mati${N}")"
+  printf " ${G}%-13s${N}: %b\n" "Nginx" "$(systemctl is-active --quiet nginx && echo "${G}running${N}" || echo "${R}mati${N}")"
+  printf " ${G}%-13s${N}: %b\n" "Cek Akun" "${C}https://$DOMAIN/cek${N}"
+  if [[ $cfgok == 0 ]]; then
+    echo -e "$LINE"
+    echo -e " ${R}Detail error:${N}"
+    echo "$cfgout" | grep -v "^Xray \|^A unified\|\[Warning\]\|\[Info\]" | tail -5
+  fi
+  echo -e "$LINE"
+  echo -e " ${G}Pilih akun untuk melihat detail:${N}"
+  echo
+  pick_user all || { pause; return; }
+  local exp id ipl q st used pct left
+  exp=$(db_field $PROTO "$U" 2); id=$(db_field $PROTO "$U" 3)
+  ipl=$(db_field $PROTO "$U" 4); q=$(db_field $PROTO "$U" 5); st=$(db_field $PROTO "$U" 6)
+  used=$(usage_get $PROTO "$U")
+  local today0; today0=$(date -d "$(date +%F)" +%s)
+  left=$(( ( $(date -d "$exp" +%s 2>/dev/null || echo "$today0") - today0 ) / 86400 ))
+  local expinfo
+  if [[ "$exp" < "$(date +%F)" ]]; then expinfo="${R}EXPIRED ($(( -left )) hari lalu)${N}"
+  elif [[ $left -eq 0 ]]; then expinfo="${Y}habis hari ini${N}"
+  else expinfo="($left hari lagi)"; fi
+  header "DETAIL AKUN $UP"
+  printf " ${G}%-13s${N}: %b\n" "Username" "${Y}$U${N}"
+  printf " ${G}%-13s${N}: %b\n" "Protokol" "$UP"
+  printf " ${G}%-13s${N}: %b\n" "Status" "$(st_label "$st")"
+  printf " ${G}%-13s${N}: %b\n" "Expired" "${Y}$exp${N} $expinfo"
+  printf " ${G}%-13s${N}: %b\n" "Limit IP" "$([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")"
+  if [[ "$q" == 0 || -z "$q" ]]; then
+    printf " ${G}%-13s${N}: %b\n" "Kuota" "$(hbytes $used) / Unlimited"
+  else
+    pct=$(( used * 100 / (q * 1073741824) ))
+    printf " ${G}%-13s${N}: %b\n" "Kuota" "$(hbytes $used) / ${q} GB (${pct}%)"
+  fi
+  printf " ${G}%-13s${N}: %b\n" "$([[ $PROTO == trojan ]] && echo Password || echo id)" "$id"
+  echo -e "$LINE"
+  echo -e " ${G}Pelanggan bisa cek sendiri di:${N}"
+  echo -e " ${C}https://$DOMAIN/cek${N}"
+  echo -e " (pilih $UP, tempel $([[ $PROTO == trojan ]] && echo Password || echo id) di atas)"
+  echo -e "$LINE"
+  pause
 }
 
 list_users(){ # $1 = all | active | inactive
@@ -630,7 +694,7 @@ while true; do
     8) list_users; pause ;;
     9) lock_user ;;
     10) unlock_user ;;
-    11) header "CHECK CONFIG"; xray run -test -config $CFG; pause ;;
+    11) check_config ;;
     12) recovery ;;
     13) edit_field 4 0 ;;
     14) edit_field 4 1 ;;
@@ -1037,7 +1101,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.10.0" > /etc/autoscript/version
+echo "v1.10.1" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 /usr/local/sbin/menu license >/dev/null 2>&1 || true
 
