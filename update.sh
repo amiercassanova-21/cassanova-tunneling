@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.19.1"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.19.2"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -1191,7 +1191,10 @@ if [[ ${#priv} -ne 43 || ${#pub} -ne 43 ]]; then
 fi
 [[ "$1" == "--keys" ]] && { printf 'port=%s\ndest=%s\npub=%s\nsid=%s\n' "$port" "$dest" "$pub" "$sid"; exit 0; }
 
-tmp=$(mktemp)
+# WAJIB berakhiran .json: Xray menentukan format config dari akhiran nama file.
+# Tanpa itu: "core: Failed to get format of ..." walau isinya benar.
+tmp=$(mktemp --suffix=.json 2>/dev/null)
+[[ -n "$tmp" && -f "$tmp" ]] || { tmp=/tmp/cas-reality.$$.json; : > "$tmp"; }
 jq --argjson port "$port" --arg dest "$dest" --arg priv "$priv" --arg sid "$sid" '
   ([.inbounds[]|select(.tag=="vless-ws")][0].settings.clients // []) as $cl
   | .inbounds = [ .inbounds[] | select(.tag != "vless-reality") ]

@@ -1,10 +1,7 @@
-v1.19.1
-- Perbaikan: saat updatesc, Reality bisa gagal dipasang karena uji config
-  gagal sesaat, padahal config-nya benar. Sekarang diuji sampai 2 kali, dan
-  pesan asli dari Xray disimpan di /var/log/cas-reality.log supaya bisa
-  ditelusuri (sebelumnya dibuang sehingga tidak bisa dilacak).
-- Reality kini memasang dirinya sendiri: kalau inbound-nya belum ada, cron
-  mencoba memasangnya tiap 10 menit (maksimal 6 kali, dan dihitung ulang
-  setiap kali updatesc dijalankan).
-- Log script sendiri (cas-ssl, cas-update, cas-reality) kini ikut dipangkas
-  logrotate, jadi tidak tumbuh tanpa batas.
+v1.19.2
+- Perbaikan: Reality gagal dipasang karena cara pengujian config, bukan karena
+  isinya. Xray menentukan format config dari akhiran nama file, sedangkan file
+  sementara dari mktemp tidak berakhiran .json, sehingga Xray menolak dengan
+  "Failed to get format of ...". Sekarang file ujinya berakhiran .json.
+- Isi config Reality sejak v1.19.0 sebenarnya sudah benar; tidak ada perubahan
+  pada inbound, port, kunci, maupun link Reality.
