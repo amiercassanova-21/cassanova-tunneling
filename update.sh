@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.11.1
+#  CASSANOVA TUNNELING - UPDATE v1.12.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -176,10 +176,10 @@ usage_get(){ cat $ASD/usage/$1/$2 2>/dev/null || echo 0; }
 hbytes(){ numfmt --to=iec --suffix=B "$1" 2>/dev/null || echo "$1"; }
 
 # Output: "user ip" unik dari access log N menit terakhir
-recent_ips(){
+recent_ips(){ # $1 = rentang ke belakang dalam DETIK
   local LOG=/var/log/xray/access.log since
   [[ -f $LOG ]] || return 0
-  since=$(date -d "-$1 min" '+%Y/%m/%d %H:%M:%S')
+  since=$(date -d "@$(( $(date +%s) - ${1:-60} ))" '+%Y/%m/%d %H:%M:%S')
   tail -n 30000 $LOG | awk -v s="$since" 'substr($0,1,19)>=s' \
   | sed -nE 's/.* from (tcp:|udp:)?(\[[^]]+\]|[0-9.]+):[0-9]+ accepted .*email: ([^ ]+).*/\3 \2/p' \
   | sort -u
@@ -196,8 +196,10 @@ exec 8>/run/xray-guard.lock; flock -n 8 || exit 0
 lock_db
 now=$(date +%s)
 BANMIN=$(cat $ASD/bantime 2>/dev/null || echo 15)
+# berapa kali pelanggaran beruntun sebelum akun dikunci (default 2 = tahan rotasi IP seluler)
+NEEDCONF=$(cat $ASD/ipconfirm 2>/dev/null); [[ "$NEEDCONF" =~ ^[1-9]$ ]] || NEEDCONF=2
 usage_collect
-COUNTS=$(recent_ips 2 | awk '{c[$1]++} END{for(u in c) print u, c[u]}')
+COUNTS=$(recent_ips 60 | awk '{c[$1]++} END{for(u in c) print u, c[u]}')
 
 for p in $PROTOS; do
   while read -r u exp id ipl q st; do
@@ -214,12 +216,24 @@ for p in $PROTOS; do
       if (( used >= q * 1073741824 )); then xray_del $p "$u"; db_set $p "$u" 6 quota
         cas_notify "📛 <b>Kuota Habis</b>"$'\n'"${p^^} <code>$u</code> (${q}GB) dikunci"; continue; fi
     fi
-    # limit IP
+    # limit IP (pakai konfirmasi beruntun: IP operator seluler sering berganti,
+    # 1 perangkat bisa terbaca 2 IP sesaat. Kunci hanya jika pelanggaran menetap.)
     if [[ "$ipl" =~ ^[0-9]+$ ]] && (( ipl > 0 )); then
       n=$(echo "$COUNTS" | awk -v u="$p.$u" '$1==u{print $2}')
-      if [[ -n "$n" ]] && (( n > ipl )); then
+      SFILE=$ASD/ipstreak/$p.$u
+      STREAK=0
+      if [[ -z "$n" ]] || (( n <= ipl )); then
+        rm -f "$SFILE"                       # aman -> hitungan beruntun direset
+      else
+        mkdir -p $ASD/ipstreak
+        STREAK=$(( $(cat "$SFILE" 2>/dev/null || echo 0) + 1 ))
+        echo "$STREAK" > "$SFILE"
+      fi
+      if [[ -n "$n" ]] && (( n > ipl )) && (( STREAK >= NEEDCONF )); then
+        rm -f "$SFILE"
         xray_del $p "$u"; db_set $p "$u" 6 "banned:$(( now + BANMIN*60 ))"
-        iplist=$(tail -n 20000 /var/log/xray/access.log 2>/dev/null | sed -nE "s#^([0-9/]+ ([0-9:]+))[^ ]* from (tcp:|udp:)?(\\[[^]]+\\]|[0-9.]+):[0-9]+ accepted .*email: $p\\.$u\\b.*#\\2 \\4#p" | sort -u | tail -n 5)
+        # daftar IP UNIK + waktu terakhir terlihat (bukan tiap baris log)
+        iplist=$(tail -n 20000 /var/log/xray/access.log 2>/dev/null | sed -nE "s#^([0-9/]+ ([0-9:]+))[^ ]* from (tcp:|udp:)?(\\[[^]]+\\]|[0-9.]+):[0-9]+ accepted .*email: $p\\.$u\\b.*#\\4 \\2#p" | awk '{last[$1]=$2} END{for(i in last) print last[i]" "i}' | sort | tail -n 5)
         cas_notify_quote "Multi Login ${p^^}" "<pre>✓ $u
 $iplist</pre><blockquote>Lock - $(date +%T)"$'\n'"Open - $(date -d "+$BANMIN min" +%T)</blockquote>"
       fi
@@ -564,7 +578,7 @@ modify_uuid(){
 check_login(){
   local data u exp id ipl q st ips n found=0 no=0
   header "$UP LOGIN (5 MENIT)"
-  data=$(recent_ips 5)
+  data=$(recent_ips 300)
   while read -r u exp id ipl q st; do
     [[ -z "$u" ]] && continue
     ips=$(echo "$data" | awk -v u="$PROTO.$u" '$1==u{print $2}')
@@ -861,18 +875,37 @@ set_bantime(){
     echo -e "${B}════════════════════════════════════${N}"
     printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"
     echo -e "${B}════════════════════════════════════${N}\n"
+    local cf; cf=$(cat $ASD/ipconfirm 2>/dev/null); [[ "$cf" =~ ^[1-9]$ ]] || cf=2
     echo -e "${G}Time Banned Active : ${O}$(cat $ASD/bantime 2>/dev/null || echo 15)m:0s${N}"
+    echo -e "${G}Sensitivitas Lock  : ${O}${cf}x$([[ $cf == 1 ]] && echo " (ketat)" || echo " (toleran IP seluler)")${N}"
     echo -e "${Y}(lama akun dikunci otomatis saat melebihi Limit IP)${N}\n"
     echo -e "   ${C}1.)${N}  Set Time Banned"
-    echo -e "   ${C}2.)${N}  Back to Menu"
+    echo -e "   ${C}2.)${N}  Set Sensitivitas Lock IP"
+    echo -e "   ${C}3.)${N}  Back to Menu"
     echo -e "   ${C}x.)${N}  Exit"
     echo -e "\n${B}════════════════════════════════════${N}\n"
-    read -rp "$(echo -e "${G}Select From Options [1-2 or x] : ${N}")" o
+    read -rp "$(echo -e "${G}Select From Options [1-3 or x] : ${N}")" o
     case $o in
       1) read -rp "Durasi banned (menit) : " m
          if [[ "$m" =~ ^[0-9]+$ ]] && (( m > 0 )); then echo "$m" > $ASD/bantime; echo -e "${G}Tersimpan${N}"; else echo -e "${R}Harus angka > 0${N}"; fi
          sleep 1 ;;
-      2) return ;;
+      2) clear
+         echo -e "${B}════════════════════════════════════${N}"
+         echo -e "${P}        SENSITIVITAS LOCK IP        ${N}"
+         echo -e "${B}════════════════════════════════════${N}\n"
+         echo -e " IP operator seluler sering berganti sendiri,"
+         echo -e " sehingga 1 perangkat bisa terbaca 2 IP sesaat."
+         echo -e " Akun baru dikunci bila pelanggaran menetap.\n"
+         echo -e "   ${C}1.)${N} Ketat    - kunci begitu terdeteksi"
+         echo -e "            ${Y}(risiko salah kunci di jaringan seluler)${N}"
+         echo -e "   ${C}2.)${N} Normal   - kunci setelah 2x berturut-turut ${G}(disarankan)${N}"
+         echo -e "   ${C}3.)${N} Longgar  - kunci setelah 3x berturut-turut"
+         echo -e "            ${Y}(untuk pelanggan yang IP-nya sangat sering berubah)${N}\n"
+         read -rp "Pilih [1-3] : " m
+         if [[ "$m" =~ ^[1-3]$ ]]; then echo "$m" > $ASD/ipconfirm; echo -e "${G}Tersimpan${N}"
+         else echo -e "${R}Pilihan salah${N}"; fi
+         sleep 2 ;;
+      3) return ;;
       x|X) clear; exit 0 ;;
     esac
   done
@@ -1107,7 +1140,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.11.1" > /etc/autoscript/version
+echo "v1.12.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 /usr/local/sbin/menu license >/dev/null 2>&1 || true
 
