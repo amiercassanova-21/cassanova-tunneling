@@ -1,15 +1,7 @@
-v1.16.0
-- PENTING: restore sekarang aman lintas OS. Sebelumnya backup menimpa
-  /etc/passwd, /etc/shadow, /etc/group, /etc/gshadow milik sistem, sehingga
-  restore dari Debian ke Ubuntu (atau sebaliknya) bisa mematikan layanan
-  sistem seperti systemd-resolved, dan password root VPS baru ikut berubah.
-- Keempat file itu tidak lagi ditimpa. Yang dipulihkan hanya akun SSH yang
-  tercatat di database script: nama, password, masa aktif, dan status
-  lock-nya dibuat ulang di VPS baru.
-- Pengguna sistem (UID di bawah 1000) tidak akan pernah disentuh.
-- Password root VPS baru tetap milik Anda sendiri.
-- Restore kini melaporkan jumlah akun SSH yang dipulihkan.
-- Mundur versi di VPS yang sama tidak lagi menerbitkan sertifikat SSL baru
-  tanpa perlu (hemat kuota Let's Encrypt).
-- Perintah install di bot kini menyertakan apt-get update, supaya tetap jalan
-  di VPS yang cache apt-nya masih kosong.
+v1.16.1
+- Layar konfirmasi restore kini memberi tahu kalau domain di backup belum
+  mengarah ke VPS ini, beserta jalan tercepatnya:
+  kalau VPS lama sudah mati, ubah A record dulu SEBELUM lanjut, maka
+  sertifikat SSL langsung terbit saat restore tanpa menunggu.
+  Kalau VPS lama masih dipakai, restore dulu lalu pointing diubah nanti.
+- Keterangan ini hanya muncul saat memang relevan (domain belum diarahkan).

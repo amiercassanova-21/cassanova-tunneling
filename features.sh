@@ -334,7 +334,7 @@ restore_ssh_users(){ # $1 = folder hasil ekstrak sementara (berisi etc/shadow)
 
 # ---- proses restore satu file backup (ringkasan -> kode konfirmasi -> jalan) ----
 restore_do(){ # $1 = file zip
-  local f="$1" code inp RD IP dip exp
+  local f="$1" code inp RD IP dip exp myip dnow
   [[ -s "$f" ]] || { msg "${R}File backup tidak ditemukan${N}"; return 1; }
   unzip -tq "$f" >/dev/null 2>&1 || { msg "${R}File rusak atau bukan zip yang benar${N}"; return 1; }
   unzip -l "$f" 2>/dev/null | grep -q 'etc/autoscript/' \
@@ -348,6 +348,22 @@ restore_do(){ # $1 = file zip
   printf " ${G}%-9s${N}: ${O}%s${N}\n" "Dibuat"  "${RB_DATE:-"-"}"
   printf " ${G}%-9s${N}: ${O}%s${N}\n" "Akun"    "${RB_ACC:-"-"}"
   echo -e "$LINE"
+  # Kalau domain backup belum mengarah ke VPS ini, beri tahu jalan tercepat:
+  # pointing dulu -> SSL terbit saat restore, tanpa menunggu cron 10 menit.
+  myip=$(jq -r '.ip // empty' $ASD/ipinfo.json 2>/dev/null)
+  [[ -z "$myip" ]] && myip=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null)
+  if [[ -n "$RB_DOMAIN" && -n "$myip" ]]; then
+    dnow=$(getent hosts "$RB_DOMAIN" 2>/dev/null | awk '{print $1}' | head -1)
+    if [[ "$dnow" != "$myip" ]]; then
+      echo -e " ${Y}Tips:${N} ${C}$RB_DOMAIN${N} belum mengarah ke VPS ini"
+      echo -e "       (sekarang ke ${O}${dnow:-"tidak resolve"}${N})"
+      echo
+      echo -e " ${G}VPS lama sudah mati?${N} Ubah A record ke ${C}$myip${N} (ABU-ABU)"
+      echo -e " ${Y}sebelum${N} lanjut, maka SSL langsung terbit saat restore."
+      echo -e " ${G}VPS lama masih dipakai?${N} Lanjutkan saja, pointing diubah nanti."
+      echo -e "$LINE"
+    fi
+  fi
   echo -e " ${R}Config VPS ini akan DITIMPA oleh isi backup di atas.${N}"
   code=$(head -c 400 /dev/urandom 2>/dev/null | LC_ALL=C tr -dc 'A-HJ-NP-Z2-9' | head -c 6)
   [[ ${#code} -eq 6 ]] || code=$(date +%s%N | md5sum | LC_ALL=C tr -dc 'A-HJ-NP-Z2-9' | head -c 6)
