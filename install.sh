@@ -42,7 +42,7 @@ export DEBIAN_FRONTEND=noninteractive
 mkdir -p /etc/autoscript/db /var/log/xray /var/www/html
 echo "$DOMAIN" > /etc/autoscript/domain
 echo "$BRAND"  > /etc/autoscript/brand
-echo "v1.21.0"  > /etc/autoscript/version
+echo "v1.22.0"  > /etc/autoscript/version
 touch /etc/autoscript/db/vless.db /etc/autoscript/db/vmess.db /etc/autoscript/db/trojan.db
 
 # ---------- Paket dasar ----------

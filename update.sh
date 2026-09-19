@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.21.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.22.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -79,8 +79,10 @@ is_trial(){ [[ "$1" == *trial* ]]; }
 
 proto_path(){ case $1 in vless) echo /vless ;; vmess) echo /vmess ;; trojan) echo /trojan-ws ;; esac; }
 
-lock_db(){ exec 9>/run/autoscript.lock; flock -w 20 9; }
-unlock_db(){ flock -u 9 2>/dev/null; exec 9>&-; }
+# Ctrl-C ditahan selama transaksi database, supaya tidak ada akun yang
+# masuk database tapi belum sempat ditambahkan ke Xray.
+lock_db(){ CAS_INT_SAVE=$(trap -p INT); trap '' INT; exec 9>/run/autoscript.lock; flock -w 20 9; }
+unlock_db(){ flock -u 9 2>/dev/null; exec 9>&-; eval "${CAS_INT_SAVE:-trap - INT}"; }
 
 db_get(){ awk -v u="$2" '$1==u' "$ASD/db/$1.db"; }
 db_field(){ awk -v u="$2" -v f="$3" '$1==u{print $f}' "$ASD/db/$1.db"; }
@@ -274,6 +276,8 @@ header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1
 bar(){ echo -e "$LINE"; printf "${BGB}${W}%*s%*s${N}\n" $(( (36+${#1})/2 )) "$1" $(( 36-(36+${#1})/2 )) ""; echo -e "$LINE"; }
 pause(){ echo; if [[ -n "$QUICK" ]]; then read -rp "$(echo -e "${P}Press Enter to Exit${N}")"; else read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; fi; }
 msg(){ echo -e "$1"; sleep 2; }
+# Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
+cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }
 num_ok(){ [[ "$1" =~ ^[0-9]+$ ]]; }
 
 st_label(){
@@ -771,24 +775,26 @@ while true; do
   echo -e " ${C}17.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
+  trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
   read -rp "$(echo -e "${G}Select From Options [1-17 or x] : ${N}")" opt
+  trap ':' INT
   case $opt in
-    1) create 0 ;;
-    2) create 1 ;;
-    3) trial ;;
-    4) delete ;;
-    5) renew ;;
-    6) modify_uuid ;;
-    7) check_login ;;
-    8) list_users; pause ;;
-    9) lock_user ;;
-    10) unlock_user ;;
-    11) check_config ;;
-    12) recovery ;;
-    13) edit_field 4 0 ;;
-    14) edit_field 4 1 ;;
-    15) edit_field 5 0 ;;
-    16) edit_field 5 1 ;;
+    1) cas_run "create 0" ;;
+    2) cas_run "create 1" ;;
+    3) cas_run "trial" ;;
+    4) cas_run "delete" ;;
+    5) cas_run "renew" ;;
+    6) cas_run "modify_uuid" ;;
+    7) cas_run "check_login" ;;
+    8) cas_run "list_users; pause" ;;
+    9) cas_run "lock_user" ;;
+    10) cas_run "unlock_user" ;;
+    11) cas_run "check_config" ;;
+    12) cas_run "recovery" ;;
+    13) cas_run "edit_field 4 0" ;;
+    14) cas_run "edit_field 4 1" ;;
+    15) cas_run "edit_field 5 0" ;;
+    16) cas_run "edit_field 5 1" ;;
     17) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
@@ -960,6 +966,8 @@ license_gate(){
   exit 0
 }
 
+# Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
+cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }
 coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
 
 set_bantime(){
@@ -1000,7 +1008,9 @@ set_bantime(){
          else echo -e "${R}Pilihan salah${N}"; fi
          sleep 2 ;;
       3) return ;;
-      x|X) clear; exit 0 ;;
+      # 97 = minta menu utama keluar total. Fungsi ini dijalankan di dalam
+      # subshell (cas_run), jadi "exit 0" saja tidak akan menutup script.
+      x|X) clear; exit 97 ;;
     esac
   done
 }
@@ -1037,8 +1047,13 @@ while true; do
   printf "${B}│${N} ${C}%-4s${N} ${Y}%-35s${N}\n" "0.)" "CREATE ALL PROTOCOL"
   bot
   echo
+  trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
   read -rp "$(echo -e "${G}Select From Options [0-9 or x] : ${N}")" opt
+  trap ':' INT
   case $opt in
+    # Modul di bawah ini menangani Ctrl-C sendiri (kembali ke menunya masing-
+    # masing), jadi dipanggil langsung. Kalau dibungkus subshell, pembungkusnya
+    # keluar duluan saat Ctrl-C padahal modulnya masih hidup -> layar bertumpuk.
     0) m-all ;;
     1) m-ssh ;;
     2) m-xray vmess ;;
@@ -1047,8 +1062,8 @@ while true; do
     5) m-bot ;;
     6) m-feature ;;
     8) m-brand ;;
-    7) set_bantime ;;
-    9) running ;;
+    7) cas_run "set_bantime"; [[ $? == 97 ]] && { clear; exit 0; } ;;
+    9) cas_run "running" ;;
     x|X) clear; exit 0 ;;
     *) echo -e "${R}Pilihan salah${N}"; sleep 1 ;;
   esac
@@ -1118,6 +1133,7 @@ read -rp "Kuota GB (0 = unlimited) [0] : " Q; Q=${Q:-0}; num_ok "$Q" || die "Kuo
 PASS=$(rnd 10); [[ ${#PASS} -ge 6 ]] || PASS="cas$(date +%s | tail -c 6)"
 UUID=$(gen_id)
 echo -e "\n ${G}Membuat akun...${N}"
+trap '' INT          # selama pembuatan, Ctrl-C ditahan agar tidak setengah jadi
 
 DONE=""
 rollback(){
@@ -1146,6 +1162,7 @@ run VMESS  "$TMPD/vm"  /usr/local/sbin/m-xray vmess  --create "$U" "$UUID" "$D" 
 run TROJAN "$TMPD/tr"  /usr/local/sbin/m-xray trojan --create "$U" "$UUID" "$D" "$IPL" "$Q";  DONE="$DONE trojan"
 OUT_SSH=$(cat "$TMPD/ssh"); OUT_VL=$(cat "$TMPD/vl")
 OUT_VM=$(cat "$TMPD/vm");   OUT_TR=$(cat "$TMPD/tr")
+trap - INT           # pembuatan selesai, Ctrl-C boleh lagi
 
 EXP=$(awk -F'|' '/^OK\|/{print $4; exit}' <<< "$OUT_SSH")
 IPV=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)

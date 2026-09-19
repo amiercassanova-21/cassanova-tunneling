@@ -762,6 +762,8 @@ set_reality(){
   done
 }
 
+# Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
+cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }
 coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
 
 # mode non-interaktif: adddomain
@@ -791,21 +793,23 @@ while true; do
   echo -e " ${C}15.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
+  trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
   read -rp "$(echo -e "${G}Select From Options [1-15 or x] : ${N}")" opt
+  trap ':' INT
   case $opt in
-    1) check_bandwidth ;;
-    2) set_reboot ;;
-    3) reboot_now ;;
-    4) speed_vps ;;
-    5) running ;;
-    6) backup_vps ;;
-    7) restore_vps ;;
-    8) start_stop ;;
-    9) security_syn ;;
-    10) change_domain ;;
-    11) info_system ;;
-    12) cek_port ;;
-    13) set_reality ;;
+    1) cas_run "check_bandwidth" ;;
+    2) cas_run "set_reboot" ;;
+    3) cas_run "reboot_now" ;;
+    4) cas_run "speed_vps" ;;
+    5) cas_run "running" ;;
+    6) cas_run "backup_vps" ;;
+    7) cas_run "restore_vps" ;;
+    8) cas_run "start_stop" ;;
+    9) cas_run "security_syn" ;;
+    10) cas_run "change_domain" ;;
+    11) cas_run "info_system" ;;
+    12) cas_run "cek_port" ;;
+    13) cas_run "set_reality" ;;
     14) cas-update; exit 0 ;;
     15) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;

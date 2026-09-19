@@ -179,6 +179,8 @@ header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1
 bar(){ echo -e "$LINE"; printf "${BGB}${W}%*s%*s${N}\n" $(( (36+${#1})/2 )) "$1" $(( 36-(36+${#1})/2 )) ""; echo -e "$LINE"; }
 pause(){ echo; read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; }
 msg(){ echo -e "$1"; sleep 2; }
+# Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
+cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }
 num_ok(){ [[ "$1" =~ ^[0-9]+$ ]]; }
 
 # ---- non-interaktif ----
@@ -459,20 +461,22 @@ while true; do
   echo -e " ${C}13.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
+  trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
   read -rp "$(echo -e "${G}Select From Options [1-13 or x] : ${N}")" opt
+  trap ':' INT
   case $opt in
-    1) create ;;
-    2) trial ;;
-    3) delete ;;
-    4) renew ;;
-    5) modify_pass ;;
-    6) check_login ;;
-    7) list_users; pause ;;
-    8) lock_user ;;
-    9) unlock_user ;;
-    10) recovery ;;
-    11) edit_limit 0 ;;
-    12) edit_limit 1 ;;
+    1) cas_run "create" ;;
+    2) cas_run "trial" ;;
+    3) cas_run "delete" ;;
+    4) cas_run "renew" ;;
+    5) cas_run "modify_pass" ;;
+    6) cas_run "check_login" ;;
+    7) cas_run "list_users; pause" ;;
+    8) cas_run "lock_user" ;;
+    9) cas_run "unlock_user" ;;
+    10) cas_run "recovery" ;;
+    11) cas_run "edit_limit 0" ;;
+    12) cas_run "edit_limit 1" ;;
     13) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;

@@ -115,6 +115,8 @@ BOTF=$ASD/bot
 LINE="${B}════════════════════════════════════${N}"
 header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
 pause(){ echo; read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; }
+# Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
+cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }
 msg(){ echo -e "$1"; sleep 2; }
 load(){ BOT_TOKEN=""; CHAT_ID=""; NOTIFY="off"; [[ -f $BOTF ]] && . $BOTF; }
 save(){ printf 'BOT_TOKEN="%s"\nCHAT_ID="%s"\nNOTIFY="%s"\n' "$BOT_TOKEN" "$CHAT_ID" "$NOTIFY" > $BOTF; chmod 600 $BOTF; }
@@ -294,15 +296,17 @@ while true; do
   echo -e " ${C}8.)${N}  Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
+  trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
   read -rp "$(echo -e "${G}Select From Options [1-8 or x] : ${N}")" opt
+  trap ':' INT
   case $opt in
-    1) make_bot ;;
-    2) toggle_notify ;;
-    3) backup_now ;;
-    4) change_bot ;;
-    5) set_report ;;
-    6) set_backup ;;
-    7) set_bklink ;;
+    1) cas_run "make_bot" ;;
+    2) cas_run "toggle_notify" ;;
+    3) cas_run "backup_now" ;;
+    4) cas_run "change_bot" ;;
+    5) cas_run "set_report" ;;
+    6) cas_run "set_backup" ;;
+    7) cas_run "set_bklink" ;;
     8) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;

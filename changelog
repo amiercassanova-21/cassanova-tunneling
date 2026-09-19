@@ -1,12 +1,15 @@
-v1.21.0
-- Baru: CREATE ALL PROTOCOL. Satu kali isi, langsung jadi akun SSH, VLESS,
-  VMESS, dan TROJAN sekaligus dengan UUID yang sama. Ada di menu utama
-  pilihan 0, atau lewat perintah: addall
-- Username diisi sendiri, password SSH dan UUID dibuat acak otomatis.
-- Dikirim ke Telegram sebagai 4 pesan berurutan (ringkasan + SSH, lalu
-  VLESS, VMESS, TROJAN) karena kalau digabung melebihi batas Telegram.
-  Tiap config tetap punya kotak salin sendiri.
-- Kalau salah satu protokol gagal dibuat, yang sudah terlanjur dibuat
-  dihapus kembali, jadi tidak ada akun yang tertinggal setengah jadi.
-- Tambahan untuk keperluan lain: m-xray <proto> --create dan
-  m-ssh ssh --create kini bisa dipanggil non-interaktif.
+v1.22.0
+- Ctrl-C sekarang kembali ke menu sebelumnya, bukan keluar total.
+  Di dalam sebuah aksi (form Create, konfirmasi Delete, sub-menu, jeda
+  "Press Enter") Ctrl-C membatalkan aksi itu saja lalu kembali ke menu
+  tempat aksi dipanggil. Ctrl-C di menu paling atas (menu utama) tetap
+  keluar ke shell seperti biasa.
+- Berlaku di semua menu: menu utama, SSH, VMESS/VLESS/TROJAN, SETUP BOT,
+  FEATURES, dan SET REDUCE/TIME.
+- Aksi yang dibatalkan tidak meninggalkan jejak: akun tidak terbuat,
+  akun tidak terhapus, setelan tidak berubah.
+- Pengaman transaksi: selama data akun sedang ditulis (buat/hapus/renew),
+  Ctrl-C ditahan sampai penulisan selesai, supaya database akun tidak
+  rusak setengah jalan. Sesudah itu Ctrl-C berfungsi normal kembali.
+- Perbaikan: pilihan "x" di menu SET REDUCE/TIME kembali benar-benar
+  keluar ke shell (sebelumnya hanya balik ke menu utama).
