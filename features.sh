@@ -665,6 +665,47 @@ cek_port(){
   pause
 }
 
+pakai_kamuflase(){ # $1 = domain
+  local cur; cur=$(cat $ASD/reality_dest 2>/dev/null)
+  echo "$1" > $ASD/reality_dest
+  echo -e "\n${Y}Menerapkan (xray direstart sebentar)...${N}"
+  if /usr/local/sbin/cas-reality --restart; then
+    msg "${G}Kamuflase sekarang: $1${N}"
+  else
+    echo "$cur" > $ASD/reality_dest
+    /usr/local/sbin/cas-reality --restart >/dev/null 2>&1
+    msg "${R}Gagal diterapkan, dikembalikan ke $cur${N}"
+  fi
+}
+
+cari_kamuflase(){
+  local list=(www.asus.com www.lovelive-anime.jp addons.mozilla.org aws.amazon.com
+              www.tesla.com www.samsung.com shopee.co.id www.bing.com)
+  local ok=() d n i=0
+  header "CARI DOMAIN KAMUFLASE"
+  echo -e " ${Y}Tiap domain diuji dengan koneksi Reality sungguhan.${N}"
+  echo -e " ${Y}Perlu sekitar 15 detik per domain, mohon tunggu.${N}\n"
+  for d in "${list[@]}"; do
+    printf " %-24s " "$d"
+    if /usr/local/sbin/cas-reality --test "$d" >/dev/null 2>&1; then
+      ok+=("$d"); echo -e "${G}bisa dipakai${N}"
+    else
+      echo -e "${R}tidak cocok${N}"
+    fi
+  done
+  echo -e "$LINE"
+  if [[ ${#ok[@]} == 0 ]]; then
+    echo -e " ${R}Tidak ada yang cocok dari daftar ini.${N}"
+    echo -e " Coba isi domain sendiri lewat menu 3."; pause; return
+  fi
+  echo -e " ${G}Yang bisa dipakai:${N}\n"
+  for d in "${ok[@]}"; do i=$((i+1)); printf "  ${C}%s.)${N} %s\n" "$i" "$d"; done
+  echo -e "\n  ${C}0.)${N} Batal"
+  echo; read -rp "Pilih nomor : " n
+  [[ "$n" =~ ^[0-9]+$ ]] && (( n >= 1 && n <= ${#ok[@]} )) || return
+  pakai_kamuflase "${ok[$((n-1))]}"
+}
+
 set_reality(){
   local o v cur
   while true; do
@@ -679,9 +720,10 @@ set_reality(){
     echo -e " ${G}ShortId    : ${O}$(cat $ASD/reality_sid 2>/dev/null)${N}"
     echo -e " ${Y}(Reality tidak butuh domain maupun SSL)${N}\n"
     echo -e " ${C}1.)${N} Ubah port"
-    echo -e " ${C}2.)${N} Ubah domain kamuflase (SNI)"
-    echo -e " ${C}3.)${N} Buat ulang kunci (semua config Reality lama jadi tidak berlaku)"
-    echo -e " ${C}4.)${N} Kembali\n"
+    echo -e " ${C}2.)${N} Cari domain kamuflase otomatis ${Y}(disarankan)${N}"
+    echo -e " ${C}3.)${N} Isi domain kamuflase sendiri"
+    echo -e " ${C}4.)${N} Buat ulang kunci (semua config Reality lama jadi tidak berlaku)"
+    echo -e " ${C}5.)${N} Kembali\n"
     read -rp "Pilih : " o
     case $o in
       1) read -rp "Port baru (1-65535) : " v
@@ -695,20 +737,20 @@ set_reality(){
          echo -e "\n${Y}Menerapkan (xray direstart, koneksi user terputus sebentar)...${N}"
          if /usr/local/sbin/cas-reality --restart; then msg "${G}Port Reality: $v${N}"
          else echo "$cur" > $ASD/reality_port; msg "${R}Gagal, dikembalikan ke $cur${N}"; fi ;;
-      2) echo -e "\n Contoh: www.microsoft.com, www.yahoo.co.jp, www.bing.com"
-         echo -e " ${Y}Harus situs yang mendukung TLS 1.3 + HTTP/2.${N}\n"
+      2) cari_kamuflase ;;
+      3) echo -e "\n ${Y}Domain harus diuji dulu: situs yang mendukung TLS 1.3 pun bisa${N}"
+         echo -e " ${Y}gagal kalau sertifikatnya terlalu besar.${N}\n"
          read -rp "Domain kamuflase : " v
          [[ "$v" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || { msg "${R}Domain tidak valid${N}"; continue; }
-         echo -e "\n${Y}Menguji $v ...${N}"
-         if ! curl -s --max-time 10 -o /dev/null --tlsv1.3 "https://$v"; then
-           read -rp "$(echo -e " ${R}Tidak bisa dihubungi/TLS1.3 gagal. Tetap pakai? (y/t) : ${N}")" y
+         echo -e "\n${Y}Menguji $v (sekitar 15 detik)...${N}"
+         if /usr/local/sbin/cas-reality --test "$v"; then
+           echo -e " ${G}$v cocok dipakai${N}"
+         else
+           read -rp "$(echo -e " ${R}$v TIDAK cocok. Tetap pakai? (y/t) : ${N}")" y
            [[ "$y" != y ]] && continue
          fi
-         cur=$(cat $ASD/reality_dest 2>/dev/null); echo "$v" > $ASD/reality_dest
-         echo -e "${Y}Menerapkan (xray direstart)...${N}"
-         if /usr/local/sbin/cas-reality --restart; then msg "${G}Kamuflase: $v${N}"
-         else echo "$cur" > $ASD/reality_dest; msg "${R}Gagal, dikembalikan ke $cur${N}"; fi ;;
-      3) read -rp "$(echo -e " ${R}Semua config Reality yang sudah dibagikan akan mati. Lanjut? (y/t) : ${N}")" y
+         pakai_kamuflase "$v" ;;
+      4) read -rp "$(echo -e " ${R}Semua config Reality yang sudah dibagikan akan mati. Lanjut? (y/t) : ${N}")" y
          [[ "$y" != y ]] && continue
          rm -f $ASD/reality_priv $ASD/reality_pub $ASD/reality_sid
          echo -e "\n${Y}Membuat kunci baru & menerapkan...${N}"

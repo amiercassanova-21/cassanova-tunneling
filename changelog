@@ -1,7 +1,12 @@
-v1.19.2
-- Perbaikan: Reality gagal dipasang karena cara pengujian config, bukan karena
-  isinya. Xray menentukan format config dari akhiran nama file, sedangkan file
-  sementara dari mktemp tidak berakhiran .json, sehingga Xray menolak dengan
-  "Failed to get format of ...". Sekarang file ujinya berakhiran .json.
-- Isi config Reality sejak v1.19.0 sebenarnya sudah benar; tidak ada perubahan
-  pada inbound, port, kunci, maupun link Reality.
+v1.20.0
+- Perbaikan penting Reality: domain kamuflase bawaan diganti dari
+  www.microsoft.com ke www.asus.com. Ternyata www.microsoft.com tidak bisa
+  dipakai karena rantai sertifikatnya terlalu besar sehingga jabat tangan
+  tidak pernah selesai, dan Reality menolak setiap klien tanpa pesan apa pun.
+  VPS yang masih memakainya dipindahkan otomatis saat update.
+- Baru: pencarian domain kamuflase otomatis (menu Setelan VLESS Reality -> 2).
+  Script menguji 8 kandidat dengan koneksi Reality sungguhan, lalu menampilkan
+  mana saja yang bisa dipakai untuk dipilih.
+- Mengisi domain kamuflase sendiri kini juga diuji dulu sebelum disimpan,
+  bukan sekadar dicek TLS 1.3-nya.
+- Perintah baru untuk menguji satu domain: cas-reality --test <domain>

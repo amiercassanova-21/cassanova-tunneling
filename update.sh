@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.19.2"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.20.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -1154,6 +1154,48 @@ CFG=/usr/local/etc/xray/config.json
 LOG=/var/log/cas-reality.log
 b64u(){ base64 -w0 | tr '+/' '-_' | tr -d '='; }
 
+# --test <domain>: uji apakah domain itu layak jadi kamuflase, dengan
+# menjalankan server + klien Reality sungguhan di localhost. Ini satu-satunya
+# cara yang benar: situs bisa TLS 1.3 tapi tetap gagal kalau rantai
+# sertifikatnya terlalu besar sehingga jabat tangan tidak selesai.
+if [[ "$1" == "--test" ]]; then
+  d="$2"
+  [[ "$d" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || exit 2
+  tk=$(mktemp -d) || exit 2
+  xray x25519 > $tk/k.txt 2>/dev/null
+  tp=$(grep -i '^PrivateKey' $tk/k.txt 2>/dev/null | sed 's/.*: *//')
+  tu=$(grep -i 'PublicKey'   $tk/k.txt 2>/dev/null | sed 's/.*: *//')
+  if [[ ${#tp} -ne 43 || ${#tu} -ne 43 ]]; then rm -rf $tk; exit 2; fi
+  sp=$(( RANDOM % 8000 + 21000 )); cp=$(( sp + 1 ))
+  cat > $tk/s.json <<J
+{ "log":{"loglevel":"error"},
+  "inbounds":[{"listen":"127.0.0.1","port":$sp,"protocol":"vless",
+    "settings":{"clients":[{"id":"11111111-1111-1111-1111-111111111111"}],"decryption":"none"},
+    "streamSettings":{"network":"tcp","security":"reality",
+      "realitySettings":{"target":"$d:443","xver":0,"serverNames":["$d"],
+        "privateKey":"$tp","shortIds":["","00aa9d24"]}}}],
+  "outbounds":[{"protocol":"freedom"}] }
+J
+  cat > $tk/c.json <<J
+{ "log":{"loglevel":"error"},
+  "inbounds":[{"listen":"127.0.0.1","port":$cp,"protocol":"socks","settings":{"udp":false}}],
+  "outbounds":[{"protocol":"vless",
+    "settings":{"vnext":[{"address":"127.0.0.1","port":$sp,
+      "users":[{"id":"11111111-1111-1111-1111-111111111111","encryption":"none"}]}]},
+    "streamSettings":{"network":"tcp","security":"reality",
+      "realitySettings":{"serverName":"$d","fingerprint":"chrome",
+        "password":"$tu","shortId":"00aa9d24"}}}] }
+J
+  xray run -c $tk/s.json >/dev/null 2>&1 & spid=$!
+  xray run -c $tk/c.json >/dev/null 2>&1 & cpid=$!
+  sleep 3
+  rc=1
+  curl -s --max-time 12 -o /dev/null -x socks5h://127.0.0.1:$cp https://api.ipify.org && rc=0
+  kill $spid $cpid >/dev/null 2>&1; wait $spid $cpid >/dev/null 2>&1
+  rm -rf $tk
+  exit $rc
+fi
+
 # --ensure: dipakai cron. Kalau inbound Reality hilang (mis. gagal sesaat saat
 # update), dipasang ulang. Dibatasi 6 percobaan supaya tidak mencoba selamanya.
 if [[ "$1" == "--ensure" ]]; then
@@ -1168,7 +1210,7 @@ fi
 port=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
 [[ "$port" =~ ^[0-9]+$ ]] && (( port > 0 && port < 65536 )) || port=2087
 dest=$(cat $ASD/reality_dest 2>/dev/null | tr -d '[:space:]')
-[[ "$dest" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || dest=www.microsoft.com
+[[ "$dest" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || dest=www.asus.com
 echo "$port" > $ASD/reality_port; echo "$dest" > $ASD/reality_dest
 
 # kunci dibuat sekali saja dan tidak pernah diganti saat update
@@ -1251,6 +1293,9 @@ exit 0
 EOF
 chmod +x /usr/local/sbin/cas-reality
 rm -f /etc/autoscript/reality_try   # tiap update memberi 6 kesempatan baru bagi cron --ensure
+# www.microsoft.com ternyata tidak bisa dipakai (rantai sertifikatnya terlalu
+# besar, jabat tangan tidak selesai). VPS yang masih memakainya dipindahkan.
+[[ "$(cat /etc/autoscript/reality_dest 2>/dev/null)" == "www.microsoft.com" ]] && echo "www.asus.com" > /etc/autoscript/reality_dest
 /usr/local/sbin/cas-reality || echo -e "${RED}Reality dilewati (lihat pesan di atas), protokol lain tidak terpengaruh.${NC}"
 
 DOMAIN=$(cat /etc/autoscript/domain)
