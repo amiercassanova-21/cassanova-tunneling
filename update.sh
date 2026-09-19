@@ -271,7 +271,7 @@ if [[ "$2" == "--expire" ]]; then lock_db; expire_all; unlock_db; exit 0; fi
 LINE="${B}════════════════════════════════════${N}"
 header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
 bar(){ echo -e "$LINE"; printf "${BGB}${W}%*s%*s${N}\n" $(( (36+${#1})/2 )) "$1" $(( 36-(36+${#1})/2 )) ""; echo -e "$LINE"; }
-pause(){ echo; read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; }
+pause(){ echo; if [[ -n "$QUICK" ]]; then read -rp "$(echo -e "${P}Press Enter to Exit${N}")"; else read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; fi; }
 msg(){ echo -e "$1"; sleep 2; }
 num_ok(){ [[ "$1" =~ ^[0-9]+$ ]]; }
 
@@ -529,8 +529,8 @@ trial(){
 }
 
 delete(){
-  pick_user || return
-  confirm_pick || return
+  if [[ -n "$PRESET_U" ]]; then U="$PRESET_U"; PRESET_U=""; echo -e " ${G}Akun : ${Y}$U${N}"; confirm_pick || return
+  else pick_user || return; confirm_pick || return; fi
   local dexp=$(db_field $PROTO "$U" 2)
   lock_db; remove_account $PROTO "$U"; unlock_db
   cas_notify_quote "Delete User" "<pre>User    : $U
@@ -541,8 +541,8 @@ Type    : $PROTO</pre>"
 
 renew(){
   local d base today new st
-  pick_user || return
-  confirm_pick || return
+  if [[ -n "$PRESET_U" ]]; then U="$PRESET_U"; PRESET_U=""; echo -e " ${G}Akun : ${Y}$U${N}"
+  else pick_user || return; confirm_pick || return; fi
   read -rp "Tambah masa aktif (hari) : " d; num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
   lock_db
   base=$(db_field $PROTO "$U" 2); today=$(date +%F)
@@ -623,18 +623,22 @@ Open : $(date +%T)</pre>"
 }
 
 recovery(){
-  local i=0 u exp id ipl q st del d new line inp v names=()
+  local i=0 u exp id ipl q st del d new line inp v names=() quiet=""
+  [[ -n "$PRESET_U" ]] && quiet=1
   header "RECOVERY $UP"
-  printf " ${G}%-3s %-16s %-12s${N}\n" "NO" "USERNAME" "DIHAPUS"
+  [[ -z "$quiet" ]] && printf " ${G}%-3s %-16s %-12s${N}\n" "NO" "USERNAME" "DIHAPUS"
   while read -r u exp id ipl q st del; do
     [[ -z "$u" ]] && continue; i=$((i+1)); names+=("$u")
-    printf " %-3s %-16s %-12s\n" "$i" "$u" "$del"
+    [[ -z "$quiet" ]] && printf " %-3s %-16s %-12s\n" "$i" "$u" "$del"
   done < <(tac "$TRASH" 2>/dev/null)
   [[ $i == 0 ]] && { echo -e " ${Y}Tidak ada akun yang bisa dipulihkan${N}"; pause; return; }
-  echo -e "$LINE"
-  echo -e " ${G}Total : ${Y}$i${G} akun${N}"
-  echo -e "$LINE"
-  read -rp "Nomor / Username : " inp
+  if [[ -z "$quiet" ]]; then
+    echo -e "$LINE"
+    echo -e " ${G}Total : ${Y}$i${G} akun${N}"
+    echo -e "$LINE"
+  fi
+  if [[ -n "$PRESET_U" ]]; then inp="$PRESET_U"; PRESET_U=""; echo -e " ${G}Akun : ${Y}$inp${N}"
+  else read -rp "Nomor / Username : " inp; fi
   if [[ "$inp" =~ ^[0-9]+$ ]] && (( inp >= 1 && inp <= i )); then u=${names[$((inp-1))]}; else u=$inp; fi
   line=$(awk -v u="$u" '$1==u' "$TRASH" | tail -n1)
   [[ -z "$line" ]] && { msg "${R}User tidak ada di recovery${N}"; return; }
@@ -677,6 +681,38 @@ edit_field(){ # field(4=ip,5=quota) all(0/1)
   unlock_db
   echo -e "${G}Berhasil disimpan${N}"; pause
 }
+
+# ---- perintah cepat dari terminal (addvless / renewvless <kode> / dst) ----
+# $3 boleh username ATAU uuid/password akun
+find_acc(){ # $1=kode  $2=file (default DB) -> cetak username
+  local k="$1" f="${2:-$DB}"
+  [[ -z "$k" || ! -s "$f" ]] && return 1
+  awk -v k="$k" '$1==k{print $1; ok=1; exit} END{exit !ok}' "$f" && return 0
+  awk -v k="$k" '$3==k{print $1; ok=1; exit} END{exit !ok}' "$f"
+}
+case "$2" in
+  --add) QUICK=1; create 0; exit 0 ;;
+  --renew|--del|--recovery)
+    QUICK=1
+    src="$DB"; [[ "$2" == "--recovery" ]] && src="$TRASH"
+    if [[ -z "$3" ]]; then
+      echo -e "${R}Kode akun belum diisi.${N}"
+      echo -e "Contoh: ${G}${2#--}${PROTO} namaakun${N}  atau pakai UUID"
+      exit 1
+    fi
+    PRESET_U=$(find_acc "$3" "$src")
+    if [[ -z "$PRESET_U" ]]; then
+      echo -e "${R}Akun '$3' tidak ditemukan di ${UP}$([[ "$2" == "--recovery" ]] && echo " (daftar recovery)")${N}"
+      exit 1
+    fi
+    case "$2" in
+      --renew)    renew ;;
+      --del)      delete ;;
+      --recovery) recovery ;;
+    esac
+    exit 0 ;;
+esac
+
 
 while true; do
   header "$UP"
@@ -987,6 +1023,32 @@ cat > /usr/local/sbin/renewsc <<'RSC'
 exec /usr/local/sbin/menu renew
 RSC
 chmod +x /usr/local/sbin/renewsc
+
+# jalan pintas per protokol: addvless, renewvless <kode>, delvless <kode>, recoveryvless <kode>
+for _p in vless vmess trojan; do
+  for _a in add renew del recovery; do
+    cat > /usr/local/sbin/${_a}${_p} <<SC
+#!/bin/bash
+exec /usr/local/sbin/m-xray ${_p} --${_a} "\$1"
+SC
+    chmod +x /usr/local/sbin/${_a}${_p}
+  done
+  ln -sf /usr/local/sbin/del${_p} /usr/local/sbin/delete${_p} 2>/dev/null
+done
+# bentuk bersepasi: "add vless", "renew vless <kode>", "delete vless <kode>", "recovery vless <kode>"
+for _c in add renew delete recovery; do
+  _f=$_c; [[ $_c == delete ]] && _f=del
+  cat > /usr/local/sbin/${_c} <<SC
+#!/bin/bash
+case "\$1" in
+  vless|vmess|trojan) exec /usr/local/sbin/m-xray "\$1" --${_f} "\$2" ;;
+  *) echo "Gunakan: ${_c} vless|vmess|trojan$([[ $_c == add ]] || echo ' <username/uuid>')"
+     echo "   atau: ${_c}vless$([[ $_c == add ]] || echo ' <username/uuid>')"
+     exit 1 ;;
+esac
+SC
+  chmod +x /usr/local/sbin/${_c}
+done
 chmod +x /usr/local/sbin/menu /usr/local/sbin/m-xray /usr/local/sbin/running /usr/local/sbin/xray-guard
 
 # =====================================================
@@ -1170,4 +1232,5 @@ echo -e "${GRN}==============================================${NC}"
 echo -e "${GRN}   UPDATE SELESAI - $(cat /etc/autoscript/version)${NC}"
 echo -e "${GRN}==============================================${NC}"
 echo -e " Ketik ${GRN}menu${NC} untuk membuka menu"
+echo -e " Ketik ${GRN}cmd${NC}  untuk melihat daftar perintah cepat"
 rm -f /root/update.sh

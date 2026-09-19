@@ -1,7 +1,8 @@
-v1.12.1
-- Backup tidak lagi menumpuk: hanya 5 backup terbaru yang disimpan
-  (sebelumnya berbasis umur file, jumlahnya bisa membengkak)
-- Backup pre-update dipisah: disimpan 3 terbaru, cukup untuk mundur beberapa versi
-- Perbaikan: penghapusan backup rutin dulu ikut menghapus file pre-update
-- Menu Restore kini hanya menampilkan backup biasa agar tidak membingungkan.
-  Backup pre-update tetap bisa dibuka dengan menekan "p" bila perlu mundur versi.
+v1.13.0
+- Perintah cepat dari terminal (tanpa buka menu):
+  backup, restore, addvless/addvmess/addtrojan,
+  renewvless <kode>, delvless <kode>, recoveryvless <kode>
+- <kode> bisa username ATAU UUID/Password akun
+- Bisa juga ditulis terpisah: renew vmess budi, delete vless <uuid>
+- Ketik cmd untuk melihat daftar semua perintah cepat
+- Renew lewat perintah cepat tetap mereset kuota seperti lewat menu

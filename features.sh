@@ -184,6 +184,68 @@ EOF
 chmod +x /usr/local/sbin/adddomain
 ln -sf /usr/local/sbin/adddomain /usr/local/sbin/addomain 2>/dev/null
 
+# jalan pintas: ketik  backup  -> buat backup baru (+ kirim Telegram bila bot aktif)
+cat > /usr/local/sbin/backup <<'EOF'
+#!/bin/bash
+BOT_TOKEN=""; CHAT_ID=""
+. /etc/autoscript/bot 2>/dev/null
+echo "Membuat backup..."
+f=$(/usr/local/sbin/cas-backup-make)
+[[ -s "$f" ]] || { echo "Gagal membuat backup"; exit 1; }
+echo "Backup dibuat : $f"
+if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+  echo "Mengirim ke Telegram..."
+  if curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
+      -F parse_mode=HTML -F caption="$(/usr/local/sbin/cas-backup-caption)" \
+      "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"; then
+    echo "Terkirim ke Telegram"
+  else
+    echo "Gagal kirim ke Telegram (file tetap tersimpan di VPS)"
+  fi
+else
+  echo "Bot belum diatur, backup hanya tersimpan di VPS"
+fi
+EOF
+chmod +x /usr/local/sbin/backup
+
+# jalan pintas: ketik  restore  -> buka menu restore
+cat > /usr/local/sbin/restore <<'EOF'
+#!/bin/bash
+exec /usr/local/sbin/m-feature --restore
+EOF
+chmod +x /usr/local/sbin/restore
+
+# daftar semua perintah cepat: ketik  cmd  (atau perintah)
+cat > /usr/local/sbin/cmd <<'EOF'
+#!/bin/bash
+G='\033[0;32m'; C='\033[0;36m'; Y='\033[1;33m'; P='\033[0;35m'; B='\033[0;34m'; N='\033[0m'
+L="${B}════════════════════════════════════${N}"
+clear
+echo -e "$L"; printf "${P}%*s${N}\n" 28 "DAFTAR PERINTAH CEPAT"; echo -e "$L"
+r(){ printf " ${C}%-22s${N} %s\n" "$1" "$2"; }
+echo -e "\n ${Y}UMUM${N}"
+r "menu"              "buka menu utama"
+r "cmd"               "tampilkan daftar ini"
+r "updatesc"          "update script ke versi terbaru"
+r "renewsc"           "cek ulang lisensi setelah diperpanjang"
+r "adddomain"         "ganti / pasang domain baru"
+echo -e "\n ${Y}BACKUP${N}"
+r "backup"            "buat backup baru (+ kirim ke Telegram)"
+r "restore"           "buka menu restore backup"
+echo -e "\n ${Y}AKUN XRAY (vless / vmess / trojan)${N}"
+r "addvless"          "buat akun VLESS baru"
+r "renewvless <kode>" "perpanjang akun (kuota ikut direset)"
+r "delvless <kode>"   "hapus akun (masuk daftar recovery)"
+r "recoveryvless <kode>" "pulihkan akun yang sudah dihapus"
+echo
+echo -e " ${Y}<kode>${N} = username ${Y}atau${N} UUID/Password akun"
+echo -e " Ganti ${C}vless${N} dengan ${C}vmess${N} / ${C}trojan${N} sesuai protokol."
+echo -e " Bisa juga dipisah spasi, contoh: ${C}renew vmess budi${N}"
+echo -e "$L"
+EOF
+chmod +x /usr/local/sbin/cmd
+ln -sf /usr/local/sbin/cmd /usr/local/sbin/perintah 2>/dev/null
+
 cat > /usr/local/sbin/cas-channel <<'EOF'
 #!/bin/bash
 case $1 in
@@ -437,6 +499,7 @@ coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
 
 # mode non-interaktif: adddomain
 if [[ "$1" == "--domain" ]]; then change_domain; exit 0; fi
+if [[ "$1" == "--restore" ]]; then restore_vps; exit 0; fi
 
 while true; do
   header "FEATURES"

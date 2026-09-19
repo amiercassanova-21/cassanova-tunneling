@@ -318,7 +318,7 @@ $L
 <code>Date   :</code> $(date +%F)
 <code>Time   :</code> $(date +%H:%M:%S)
 $L
-<code>Restore :</code> menu → 6 FEATURES → 7 Restore
+<code>Restore :</code> ketik <code>restore</code> di VPS (atau menu → 6 → 7)
 Upload file .zip ini ke folder /root VPS
 TXT
 EOF
