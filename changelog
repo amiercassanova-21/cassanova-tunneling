@@ -1,17 +1,6 @@
-v1.14.0
-- Restore backup ke VPS pengganti kini sekali jalan. Setelah restore, buyer
-  hanya perlu mengarahkan A record domain ke IP VPS baru (ABU-ABU), lalu
-  tidak perlu mengetik apa pun lagi.
-- Perbaikan penting: backup ikut membawa data IP VPS asal, sehingga VPS baru
-  dulu terkunci lisensi setelah restore. Sekarang IP dicatat ulang otomatis
-  dan status lisensi langsung disegarkan.
-- SSL domain hasil restore diterbitkan sendiri (maksimal 10 menit) begitu
-  pointing sudah benar, tanpa mematikan nginx (koneksi user tidak terputus).
-- Peringatan otomatis ke Telegram kalau domain masih ORANGE di Cloudflare.
-- Perpanjangan SSL berikutnya kini otomatis reload nginx, jadi sertifikat baru
-  langsung terpakai tanpa restart manual.
-- Restore kini menampilkan ringkasan isi backup (domain, IP asal, tanggal,
-  jumlah akun) dan meminta kode konfirmasi 6 karakter.
-- File backup asing atau rusak ditolak sebelum menimpa config.
-- Baru: restore langsung dari link, tanpa upload manual
-  contoh: restore https://contoh.com/backup.zip
+v1.14.1
+- Perbaikan: nomor versi tidak ikut naik setelah update (tetap menampilkan
+  versi lama padahal fitur baru sudah terpasang). Nomor versi kini diambil
+  dari satu sumber sehingga tidak bisa melenceng lagi.
+- Isi v1.14.0 (restore pindah VPS sekali jalan) dan v1.13.0 (perintah cepat
+  terminal) tetap sama, tidak ada perubahan fungsi.
