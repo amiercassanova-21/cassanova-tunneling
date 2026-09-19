@@ -178,7 +178,7 @@ chmod +x /usr/local/sbin/updatesc
 # jalan pintas ganti domain dari terminal: ketik  adddomain
 cat > /usr/local/sbin/adddomain <<'EOF'
 #!/bin/bash
-exec /usr/local/sbin/m-features --domain
+exec /usr/local/sbin/m-feature --domain
 EOF
 chmod +x /usr/local/sbin/adddomain
 ln -sf /usr/local/sbin/adddomain /usr/local/sbin/addomain 2>/dev/null

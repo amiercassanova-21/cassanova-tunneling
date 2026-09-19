@@ -1,4 +1,3 @@
-v1.9.8
-- Restore backup: cek domain otomatis + perbarui SSL bila kedaluwarsa (auto-domain)
-- Restore & Start/Stop service kini pakai cas-dropbear (perbaikan Ubuntu 24.04+/Debian 12+)
-- Perintah adddomain tersedia untuk ganti domain buyer (Let's Encrypt HTTP-01, wajib DNS only/abu-abu)
+v1.9.9
+- Perbaikan perintah adddomain (sebelumnya error "m-features: No such file or directory")
+- Shortcut adddomain/addomain kini memanggil m-feature yang benar
