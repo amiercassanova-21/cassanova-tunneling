@@ -145,17 +145,44 @@ toggle_notify(){
 }
 
 backup_now(){
-  load; [[ -z "$BOT_TOKEN" ]] && { msg "${R}Buat bot dulu (menu 1)${N}"; return; }
-  header "BACKUP VPS -> TELEGRAM"
-  local f; f=$(/usr/local/sbin/cas-backup-make)
-  echo -e " Mengirim $(basename "$f") ..."
-  if curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
-      -F parse_mode=HTML -F caption="$(/usr/local/sbin/cas-backup-caption)" \
-      "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"; then
-    msg "${G}Backup terkirim ke Telegram${N}"
-  else
-    msg "${R}Gagal mengirim backup${N}"
-  fi
+  header "BACKUP VPS"
+  /usr/local/sbin/cas-backup-run
+  pause
+}
+
+set_bklink(){
+  local mo dy o ml
+  while true; do
+    header "MODE KIRIM BACKUP"
+    mo=$(cat $ASD/backup_mode 2>/dev/null); [[ "$mo" =~ ^(file|link|both)$ ]] || mo=both
+    dy=$(cat $ASD/backup_days 2>/dev/null); [[ "$dy" =~ ^[0-9]+$ ]] || dy=1
+    case $mo in file) ml="File saja" ;; link) ml="Link saja" ;; *) ml="File + Link" ;; esac
+    echo -e " Mode sekarang     : ${Y}$ml${N}"
+    echo -e " Masa berlaku link : ${Y}$dy hari${N}"
+    echo -e " ${Y}(link tetap hidup walau VPS ini mati)${N}\n"
+    echo -e " ${C}1.)${N} Mode: File saja"
+    echo -e " ${C}2.)${N} Mode: Link saja"
+    echo -e " ${C}3.)${N} Mode: File + Link"
+    echo -e " ${C}4.)${N} Ubah masa berlaku link"
+    echo -e " ${C}5.)${N} Kembali\n"
+    read -rp "Pilih : " o
+    case $o in
+      1) echo file > $ASD/backup_mode; msg "${G}Mode: File saja${N}" ;;
+      2) echo link > $ASD/backup_mode; msg "${G}Mode: Link saja${N}" ;;
+      3) echo both > $ASD/backup_mode; msg "${G}Mode: File + Link${N}" ;;
+      4) echo -e "\n ${C}1.)${N} 1 hari   ${C}2.)${N} 3 hari   ${C}3.)${N} 7 hari   ${C}4.)${N} 30 hari\n"
+         read -rp "Pilih : " o
+         case $o in
+           1) echo 1  > $ASD/backup_days ;;
+           2) echo 3  > $ASD/backup_days ;;
+           3) echo 7  > $ASD/backup_days ;;
+           4) echo 30 > $ASD/backup_days ;;
+           *) continue ;;
+         esac
+         msg "${G}Masa berlaku link: $(cat $ASD/backup_days) hari${N}" ;;
+      *) return ;;
+    esac
+  done
 }
 
 # ubah interval menit -> baris cron (90 menit butuh 2 baris)
@@ -263,10 +290,11 @@ while true; do
   echo -e " ${C}4.)${N}  Change BOT API & CHATID"
   echo -e " ${C}5.)${N}  Laporan User Login (interval)"
   echo -e " ${C}6.)${N}  Jadwal Auto Backup"
-  echo -e " ${C}7.)${N}  Back to Menu"
+  echo -e " ${C}7.)${N}  Mode Kirim Backup (File / Link)"
+  echo -e " ${C}8.)${N}  Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
-  read -rp "$(echo -e "${G}Select From Options [1-7 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-8 or x] : ${N}")" opt
   case $opt in
     1) make_bot ;;
     2) toggle_notify ;;
@@ -274,7 +302,8 @@ while true; do
     4) change_bot ;;
     5) set_report ;;
     6) set_backup ;;
-    7) exit 0 ;;
+    7) set_bklink ;;
+    8) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
@@ -299,6 +328,30 @@ chmod +x /usr/local/sbin/cas-backup-make
 sed -i "s#FILES_HERE#etc/autoscript usr/local/etc/xray/config.json etc/passwd etc/shadow etc/group etc/gshadow etc/nginx/conf.d/xray.conf#" /usr/local/sbin/cas-backup-make
 
 # keterangan file backup (HTML)
+cat > /usr/local/sbin/cas-backup-link <<'EOF'
+#!/bin/bash
+# Unggah file backup ke server lisensi, cetak link unduhannya ke stdout.
+# Otentikasi memakai IP VPS ini (harus IP berlisensi), tanpa password tambahan.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ASD=/etc/autoscript
+f="$1"; [[ -s "$f" ]] || { echo "file backup tidak ada" >&2; exit 1; }
+URL=$(cat $ASD/license_url 2>/dev/null)
+[[ -z "$URL" ]] && { echo "VPS ini tanpa lisensi, link tidak tersedia" >&2; exit 1; }
+DAYS=$(cat $ASD/backup_days 2>/dev/null)
+[[ "$DAYS" =~ ^[0-9]+$ ]] && (( DAYS>=1 && DAYS<=30 )) || DAYS=1
+out=$(curl -s --max-time 180 -X POST -H "Content-Type: application/zip" \
+  --data-binary @"$f" "$URL/backup/up?name=$(basename "$f")&days=$DAYS" 2>/dev/null)
+u=$(echo "$out" | jq -r '.url // empty' 2>/dev/null)
+if [[ -z "$u" ]]; then
+  err=$(echo "$out" | jq -r '.error // empty' 2>/dev/null)
+  [[ -z "$err" ]] && err="server lisensi tidak merespons"
+  echo "$err" >&2
+  exit 1
+fi
+echo "$u"
+EOF
+chmod +x /usr/local/sbin/cas-backup-link
+
 cat > /usr/local/sbin/cas-backup-caption <<'EOF'
 #!/bin/bash
 I=/etc/autoscript/ipinfo.json
@@ -318,24 +371,98 @@ $L
 <code>Date   :</code> $(date +%F)
 <code>Time   :</code> $(date +%H:%M:%S)
 $L
-<code>Restore :</code> ketik <code>restore</code> di VPS (atau menu → 6 → 7)
-Upload file .zip ini ke folder /root VPS
 TXT
+if [[ -n "$CAS_BK_LINK" ]]; then
+  echo "🔗 <b>Link unduhan</b> (berlaku ${CAS_BK_DAYS:-1} hari)"
+  echo "<code>$CAS_BK_LINK</code>"
+  echo "$L"
+  echo "<code>Restore :</code> di VPS baru cukup ketik"
+  echo "<code>restore $CAS_BK_LINK</code>"
+else
+  echo "<code>Restore :</code> ketik <code>restore</code> di VPS (atau menu → 6 → 7)"
+  echo "Upload file .zip ini ke folder /root VPS"
+fi
 EOF
 chmod +x /usr/local/sbin/cas-backup-caption
+
+cat > /usr/local/sbin/cas-backup-run <<'EOF'
+#!/bin/bash
+# Buat backup lalu kirim sesuai mode: file / link / keduanya.
+# Dipakai oleh: perintah backup, menu, dan cron auto backup (--quiet).
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ASD=/etc/autoscript
+G='\e[32m'; R='\e[31m'; Y='\e[33m'; C='\e[36m'; N='\e[0m'
+QUIET=0; [[ "$1" == "--quiet" ]] && QUIET=1
+say(){ [[ $QUIET == 1 ]] || echo -e "$1"; }
+
+BOT_TOKEN=""; CHAT_ID=""
+. $ASD/bot 2>/dev/null
+MODE=$(cat $ASD/backup_mode 2>/dev/null); [[ "$MODE" =~ ^(file|link|both)$ ]] || MODE=both
+DAYS=$(cat $ASD/backup_days 2>/dev/null)
+[[ "$DAYS" =~ ^[0-9]+$ ]] && (( DAYS>=1 && DAYS<=30 )) || DAYS=1
+
+say " ${Y}Generating File Backup ...${N}"
+f=$(/usr/local/sbin/cas-backup-make)
+[[ -s "$f" ]] || { say " ${R}Generating File Backup Failed${N}"; exit 1; }
+say " ${G}Generating File Backup Successfully${N}"
+say ""
+
+LINK=""
+if [[ "$MODE" == link || "$MODE" == both ]]; then
+  LINK=$(/usr/local/sbin/cas-backup-link "$f" 2>/tmp/cas-bklink.err)
+  if [[ -n "$LINK" ]]; then
+    say " ${G}Download your backup file${N}"
+    say " ${C}$LINK${N}"
+    say " ${Y}Link Expire : $DAYS Days${N}"
+  else
+    say " ${R}Gagal membuat link: $(cat /tmp/cas-bklink.err 2>/dev/null)${N}"
+    say " ${Y}File backup tetap tersimpan di VPS.${N}"
+  fi
+  say ""
+fi
+
+if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+  cap=$(CAS_BK_LINK="$LINK" CAS_BK_DAYS="$DAYS" /usr/local/sbin/cas-backup-caption)
+  if [[ "$MODE" == link && -n "$LINK" ]]; then
+    say " ${G}Send Backup Link to Your Telegram Account${N}"
+    if curl -s --max-time 60 -o /dev/null --data-urlencode "chat_id=$CHAT_ID" \
+        --data-urlencode "parse_mode=HTML" --data-urlencode "text=$cap" \
+        "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" ; then
+      say " ${G}Send Backup Link Success${N}"
+    else
+      say " ${R}Send Backup Link Failed${N}"
+    fi
+  else
+    say " ${G}Send Backup File to Your Telegram Account${N}"
+    if curl -s --max-time 180 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
+        -F parse_mode=HTML -F caption="$cap" \
+        "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" ; then
+      say " ${G}Send Backup File Success${N}"
+    else
+      say " ${R}Send Backup File Failed${N}"
+    fi
+  fi
+else
+  say " ${Y}Bot belum diatur, backup hanya tersimpan di VPS${N}"
+fi
+say ""
+say " ${G}File di VPS :${N} $f"
+exit 0
+EOF
+chmod +x /usr/local/sbin/cas-backup-run
 
 cat > /usr/local/sbin/cas-autobackup <<'EOF'
 #!/bin/bash
 BOT_TOKEN=""; CHAT_ID=""; NOTIFY="off"
 . /etc/autoscript/bot 2>/dev/null
 [[ "$NOTIFY" != on || -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && exit 0
-f=$(/usr/local/sbin/cas-backup-make)
-curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
-  -F parse_mode=HTML -F caption="$(/usr/local/sbin/cas-backup-caption)" \
-  "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
+exec /usr/local/sbin/cas-backup-run --quiet
 EOF
 chmod +x /usr/local/sbin/cas-autobackup
 # jadwal auto backup: hormati pilihan buyer, jangan ditimpa saat update
+[[ -f /etc/autoscript/backup_mode ]] || echo both > /etc/autoscript/backup_mode
+[[ -f /etc/autoscript/backup_days ]] || echo 1    > /etc/autoscript/backup_days
+
 BI=$(cat /etc/autoscript/backup_interval 2>/dev/null)
 if [[ "$BI" == "0" ]]; then
   rm -f /etc/cron.d/cas-backup            # buyer mematikan auto backup

@@ -1,6 +1,17 @@
-v1.14.1
-- Perbaikan: nomor versi tidak ikut naik setelah update (tetap menampilkan
-  versi lama padahal fitur baru sudah terpasang). Nomor versi kini diambil
-  dari satu sumber sehingga tidak bisa melenceng lagi.
-- Isi v1.14.0 (restore pindah VPS sekali jalan) dan v1.13.0 (perintah cepat
-  terminal) tetap sama, tidak ada perubahan fungsi.
+v1.15.0
+- Backup kini juga menghasilkan LINK unduhan, seperti bot Potato:
+    Generating File Backup Successfully
+    Download your backup file
+    https://license.cassanova.my.id/b/xxxxxxxx
+    Link Expire : 1 Days
+- Bedanya dengan Potato: link disimpan di luar VPS, jadi TETAP BISA DIPAKAI
+  walaupun VPS lama sudah mati atau dihapus.
+- Pilihan mode kirim backup: File saja / Link saja / File + Link
+  (Setup Bot -> 7. Mode Kirim Backup), berlaku juga untuk auto backup.
+- Masa berlaku link bisa diatur 1 / 3 / 7 / 30 hari (default 1 hari).
+- Restore cukup tempel link: restore https://license.cassanova.my.id/b/xxxx
+  Nama file asli tetap dipertahankan saat diunduh.
+- Bot admin: kirim file .zip ke bot -> dibalas link unduhan siap tempel
+  (perintah /dl, atau tombol "Buat Link Backup" di menu utama).
+- Kalau link gagal dibuat (lisensi mati / server tak terjangkau), file backup
+  tetap dibuat dan tetap dikirim ke Telegram.

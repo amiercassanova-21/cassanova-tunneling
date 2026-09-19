@@ -187,24 +187,7 @@ ln -sf /usr/local/sbin/adddomain /usr/local/sbin/addomain 2>/dev/null
 # jalan pintas: ketik  backup  -> buat backup baru (+ kirim Telegram bila bot aktif)
 cat > /usr/local/sbin/backup <<'EOF'
 #!/bin/bash
-BOT_TOKEN=""; CHAT_ID=""
-. /etc/autoscript/bot 2>/dev/null
-echo "Membuat backup..."
-f=$(/usr/local/sbin/cas-backup-make)
-[[ -s "$f" ]] || { echo "Gagal membuat backup"; exit 1; }
-echo "Backup dibuat : $f"
-if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
-  echo "Mengirim ke Telegram..."
-  if curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" \
-      -F parse_mode=HTML -F caption="$(/usr/local/sbin/cas-backup-caption)" \
-      "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"; then
-    echo "Terkirim ke Telegram"
-  else
-    echo "Gagal kirim ke Telegram (file tetap tersimpan di VPS)"
-  fi
-else
-  echo "Bot belum diatur, backup hanya tersimpan di VPS"
-fi
+exec /usr/local/sbin/cas-backup-run
 EOF
 chmod +x /usr/local/sbin/backup
 
@@ -230,7 +213,7 @@ r "updatesc"          "update script ke versi terbaru"
 r "renewsc"           "cek ulang lisensi setelah diperpanjang"
 r "adddomain"         "ganti / pasang domain baru"
 echo -e "\n ${Y}BACKUP${N}"
-r "backup"            "buat backup baru (+ kirim ke Telegram)"
+r "backup"            "buat backup baru (+ link & kirim ke Telegram)"
 r "restore"           "buka menu restore backup"
 r "restore <link>"    "restore langsung dari link, tanpa upload"
 echo -e "\n ${Y}AKUN XRAY (vless / vmess / trojan)${N}"
@@ -302,14 +285,7 @@ speed_vps(){ header "SPEEDTEST VPS"; command -v speedtest-cli >/dev/null && spee
 
 backup_vps(){
   header "BACKUP CONFIGURATION"
-  local f
-  if [[ -x /usr/local/sbin/cas-backup-make ]]; then f=$(/usr/local/sbin/cas-backup-make)
-  else mkdir -p /root/backup; f=/root/backup/${DOMAIN}-$(date +%H_%M_%S).zip; cd / && zip -rq "$f" etc/autoscript usr/local/etc/xray/config.json etc/passwd etc/shadow etc/group etc/gshadow etc/nginx/conf.d/xray.conf 2>/dev/null; fi
-  echo -e " ${G}File backup:${N} $f"
-  if [[ -f $ASD/bot ]]; then
-    . $ASD/bot
-    [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]] && curl -s --max-time 120 -o /dev/null -F chat_id="$CHAT_ID" -F document=@"$f" -F parse_mode=HTML -F caption="$(/usr/local/sbin/cas-backup-caption 2>/dev/null)" "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" && echo -e " ${G}Juga dikirim ke Telegram${N}"
-  fi
+  /usr/local/sbin/cas-backup-run
   pause
 }
 
@@ -420,8 +396,16 @@ restore_url(){ # $1 = link http/https
   f=/root/backup/$base
   echo -e " Sumber : ${C}$u${N}"
   echo -e " Simpan : ${C}$f${N}\n"
-  if ! curl -fL --max-time 600 --retry 2 -o "$f" "$u"; then
-    rm -f "$f"; msg "${R}Gagal mengunduh dari link tersebut${N}"; return 1
+  if ! curl -fL --max-time 600 --retry 2 -D /tmp/cas-dl.hdr -o "$f" "$u"; then
+    rm -f "$f" /tmp/cas-dl.hdr; msg "${R}Gagal mengunduh dari link tersebut${N}"; return 1
+  fi
+  # pakai nama asli dari header bila ada (dibersihkan, tidak boleh ada path)
+  local real
+  real=$(sed -n 's/.*filename="\([^"]*\)".*/\1/p' /tmp/cas-dl.hdr 2>/dev/null | tail -1)
+  real=$(printf '%s' "$real" | tr -cd 'A-Za-z0-9._-')
+  rm -f /tmp/cas-dl.hdr
+  if [[ -n "$real" && "$real" == *.zip && "$real" != "$base" ]]; then
+    mv -f "$f" "/root/backup/$real" 2>/dev/null && f="/root/backup/$real"
   fi
   echo -e "\n ${G}Unduhan selesai (${Y}$(du -h "$f" 2>/dev/null | cut -f1)${G})${N}"
   restore_do "$f"
