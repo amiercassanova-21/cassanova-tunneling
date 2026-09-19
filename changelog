@@ -1,6 +1,4 @@
-v1.9.6
-- Lisensi habis: SEMUA VPN dimatikan (xray/dropbear/ws-ssh/badvpn/nginx), menu terkunci
-- Tanggal exp inklusif: hari-H masih aktif, mati keesokan harinya
-- Diperpanjang: nyala otomatis dalam ~2 menit (cek berkala) tanpa aksi buyer
-- Perintah renewsc untuk nyala instan; buka menu juga auto-cek latar belakang
-- Pengaman anti false-lock: cek 2x & pertahankan status bila server tak terjangkau
+v1.9.8
+- Restore backup: cek domain otomatis + perbarui SSL bila kedaluwarsa (auto-domain)
+- Restore & Start/Stop service kini pakai cas-dropbear (perbaikan Ubuntu 24.04+/Debian 12+)
+- Perintah adddomain tersedia untuk ganti domain buyer (Let's Encrypt HTTP-01, wajib DNS only/abu-abu)

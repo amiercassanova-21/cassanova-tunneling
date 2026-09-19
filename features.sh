@@ -175,6 +175,14 @@ exec /usr/local/sbin/cas-update --quick
 EOF
 chmod +x /usr/local/sbin/updatesc
 
+# jalan pintas ganti domain dari terminal: ketik  adddomain
+cat > /usr/local/sbin/adddomain <<'EOF'
+#!/bin/bash
+exec /usr/local/sbin/m-features --domain
+EOF
+chmod +x /usr/local/sbin/adddomain
+ln -sf /usr/local/sbin/adddomain /usr/local/sbin/addomain 2>/dev/null
+
 cat > /usr/local/sbin/cas-channel <<'EOF'
 #!/bin/bash
 case $1 in
@@ -252,13 +260,51 @@ restore_vps(){
   f=${list[$((n-1))]}
   read -rp "Restore $(basename "$f")? Config sekarang akan ditimpa (y/t) : " y
   [[ "$y" != y ]] && return
-  unzip -oq "$f" -d / && systemctl restart xray nginx dropbear 2>/dev/null
+  unzip -oq "$f" -d / || { msg "${R}Gagal extract backup${N}"; return; }
+
+  # --- auto-domain setelah restore (B4) ---
+  local RD IP dip
+  RD=$(cat $ASD/domain 2>/dev/null)
+  IP=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null)
+  echo -e "\n${G}Memeriksa domain hasil restore...${N}"
+  echo -e " Domain backup : ${Y}${RD:-"-"}${N}"
+  echo -e " IP VPS ini    : ${Y}$IP${N}"
+
+  if [[ -n "$RD" ]]; then
+    dip=$(getent hosts "$RD" 2>/dev/null | awk '{print $1}' | head -1)
+    if [[ "$dip" == "$IP" ]]; then
+      echo -e " ${G}Pointing sudah benar ke VPS ini${N}"
+      # perbarui SSL bila kedaluwarsa / kurang dari 7 hari
+      if ! openssl x509 -in $ASD/xray.crt -noout -checkend 604800 >/dev/null 2>&1; then
+        echo -e " ${Y}SSL kedaluwarsa/segera habis, memperbarui...${N}"
+        systemctl stop nginx
+        /root/.acme.sh/acme.sh --issue -d "$RD" --standalone -k ec-256 --force >/tmp/acme-res.log 2>&1
+        /root/.acme.sh/acme.sh --install-cert -d "$RD" --ecc \
+          --fullchain-file $ASD/xray.crt --key-file $ASD/xray.key >/dev/null 2>&1
+        systemctl start nginx
+        if openssl x509 -in $ASD/xray.crt -noout -checkend 86400 >/dev/null 2>&1; then
+          echo -e " ${G}SSL diperbarui${N}"
+        else
+          echo -e " ${R}SSL gagal diperbarui. Cek pointing & port 80.${N}"
+          tail -n 6 /tmp/acme-res.log 2>/dev/null
+        fi
+      else
+        echo -e " ${G}SSL masih berlaku${N}"
+      fi
+    else
+      echo -e " ${R}Domain $RD mengarah ke ${dip:-"(tidak resolve)"}, bukan IP VPS ini.${N}"
+      echo -e " ${Y}Pointing domain ke $IP (Cloudflare: DNS only / ABU-ABU),${N}"
+      echo -e " ${Y}lalu jalankan: ${G}adddomain${N}"
+    fi
+  fi
+
+  systemctl restart xray nginx cas-dropbear ws-ssh badvpn 2>/dev/null
   msg "${G}Restore selesai${N}"
 }
 
 start_stop(){
   header "START / STOP SERVICE"
-  local svc=(xray nginx dropbear ws-ssh badvpn)
+  local svc=(xray nginx cas-dropbear ws-ssh badvpn)
   local i=1 s
   for s in "${svc[@]}"; do
     printf " ${C}%s.)${N} %-10s [%b]\n" "$i" "$s" "$(systemctl is-active --quiet $s && echo "${G}ON${N}" || echo "${R}OFF${N}")"
@@ -289,23 +335,69 @@ SYS
 
 change_domain(){
   header "CHANGE DOMAIN VPS"
+  local IP; IP=$(jq -r '.ip // empty' $ASD/ipinfo.json 2>/dev/null)
+  [[ -z "$IP" ]] && IP=$(curl -s --max-time 8 https://api.ipify.org 2>/dev/null)
   echo -e " Domain sekarang : ${Y}$DOMAIN${N}"
-  echo -e " ${R}PERINGATAN:${N} semua akun harus dibuat ulang link-nya,"
-  echo -e " dan SSL untuk domain baru harus diterbitkan.\n"
-  read -rp "Domain baru : " nd
-  [[ -z "$nd" ]] && { msg "${R}Kosong${N}"; return; }
-  read -rp "Yakin ganti ke $nd? (y/t) : " y; [[ "$y" != y ]] && return
+  echo -e " IP VPS ini      : ${Y}$IP${N}"
+  echo -e ""
+  echo -e " ${Y}SYARAT:${N}"
+  echo -e " 1. Domain sudah di-pointing (A record) ke ${Y}$IP${N}"
+  echo -e " 2. Di Cloudflare wajib ${Y}DNS only (awan ABU-ABU)${N}"
+  echo -e " 3. Tunggu 1-5 menit setelah pointing"
+  echo -e ""
+  echo -e " ${R}PERINGATAN:${N} semua akun harus dibuat ulang link-nya."
+  echo -e ""
+  read -rp "Domain baru (kosong=batal) : " nd
+  [[ -z "$nd" ]] && { msg "${Y}Dibatalkan${N}"; return; }
+  # validasi format domain
+  if ! [[ "$nd" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$ ]]; then
+    msg "${R}Format domain tidak valid${N}"; return
+  fi
+  # cek pointing dulu (hindari SSL gagal & nginx mati sia-sia)
+  echo -e "\n${G}Mengecek pointing domain...${N}"
+  local dip; dip=$(getent hosts "$nd" 2>/dev/null | awk '{print $1}' | head -1)
+  if [[ -z "$dip" ]]; then
+    msg "${R}Domain $nd belum bisa diresolve. Cek pointing DNS dulu.${N}"; return
+  fi
+  if [[ "$dip" != "$IP" ]]; then
+    echo -e " ${Y}Domain mengarah ke : $dip${N}"
+    echo -e " ${Y}IP VPS ini         : $IP${N}"
+    echo -e " ${R}Tidak cocok!${N} Jika pakai Cloudflare, pastikan mode ${Y}DNS only (abu-abu)${N}."
+    read -rp "Tetap lanjut? (y/t) : " f; [[ "$f" != y ]] && { msg "${Y}Dibatalkan${N}"; return; }
+  else
+    echo -e " ${G}Pointing benar ke IP VPS ini${N}"
+  fi
+  read -rp "Yakin ganti domain ke $nd? (y/t) : " y; [[ "$y" != y ]] && { msg "${Y}Dibatalkan${N}"; return; }
+
+  # backup cert lama agar bisa dikembalikan jika gagal
+  cp -f $ASD/xray.crt /tmp/old.crt 2>/dev/null
+  cp -f $ASD/xray.key /tmp/old.key 2>/dev/null
+
+  echo -e "\n${G}Menerbitkan SSL untuk $nd ...${N}"
   systemctl stop nginx
-  /root/.acme.sh/acme.sh --issue -d "$nd" --standalone -k ec-256 --force 2>/dev/null
+  /root/.acme.sh/acme.sh --issue -d "$nd" --standalone -k ec-256 --force >/tmp/acme-chg.log 2>&1
   /root/.acme.sh/acme.sh --install-cert -d "$nd" --ecc \
-    --fullchain-file $ASD/xray.crt --key-file $ASD/xray.key --reloadcmd "systemctl reload nginx" 2>/dev/null
-  if [[ -s $ASD/xray.crt ]]; then
+    --fullchain-file $ASD/xray.crt --key-file $ASD/xray.key >/dev/null 2>&1
+
+  if [[ -s $ASD/xray.crt ]] && openssl x509 -in $ASD/xray.crt -noout -text 2>/dev/null | grep -q "$nd"; then
     echo "$nd" > $ASD/domain
     sed -i "s/server_name .*/server_name $nd;/" /etc/nginx/conf.d/xray.conf
-    systemctl restart nginx; msg "${G}Domain diganti ke $nd${N}"
+    systemctl restart nginx
+    msg "${G}Domain berhasil diganti ke $nd${N}"
+    cas_notify_quote "CHANGE DOMAIN" "Domain: <code>$nd</code>" 2>/dev/null || true
   else
-    systemctl start nginx; msg "${R}SSL domain baru gagal. Pastikan domain sudah pointing ke IP VPS.${N}"
+    # kembalikan cert lama
+    cp -f /tmp/old.crt $ASD/xray.crt 2>/dev/null
+    cp -f /tmp/old.key $ASD/xray.key 2>/dev/null
+    systemctl start nginx
+    echo -e "\n${R}SSL gagal diterbitkan.${N} Penyebab umum:"
+    echo -e " - Domain belum pointing ke $IP"
+    echo -e " - Cloudflare masih ORANGE (harus abu-abu / DNS only)"
+    echo -e " - Port 80 tertutup firewall"
+    echo -e "\nDetail log:"; tail -n 8 /tmp/acme-chg.log 2>/dev/null
+    msg "${R}Domain TIDAK diganti (tetap $DOMAIN)${N}"
   fi
+  rm -f /tmp/old.crt /tmp/old.key
 }
 
 info_system(){
@@ -322,6 +414,9 @@ info_system(){
 }
 
 coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
+
+# mode non-interaktif: adddomain
+if [[ "$1" == "--domain" ]]; then change_domain; exit 0; fi
 
 while true; do
   header "FEATURES"
