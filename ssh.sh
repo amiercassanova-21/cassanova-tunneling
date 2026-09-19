@@ -417,17 +417,24 @@ edit_limit(){ # all(0/1)
   unlock_db; echo -e "${G}Tersimpan${N}"; pause
 }
 
-# --create user pass hari limitip : dipakai "Create All Protocol"
+# --create user pass durasi limitip : dipakai "Create All Protocol"
+# durasi = angka (hari)  atau  angka diakhiri "m" (menit, untuk trial)
 if [[ "$2" == "--create" ]]; then
-  cu=$3; cp=$4; cdy=$5; cipl=${6:-0}
+  cu=$3; cp=$4; cdy=$5; cipl=${6:-0}; cmin=0
   [[ "$cu" =~ ^[a-z_][a-z0-9_-]{2,20}$ ]] || { echo "ERR|username SSH tidak valid"; exit 1; }
   [[ -n "$cp" ]] || { echo "ERR|password kosong"; exit 1; }
-  [[ "$cdy" =~ ^[0-9]+$ ]] || { echo "ERR|durasi harus angka"; exit 1; }
+  if [[ "$cdy" =~ ^[0-9]+m$ ]]; then cmin=${cdy%m}; (( cmin > 0 )) || { echo "ERR|durasi menit harus > 0"; exit 1; }
+  elif [[ "$cdy" =~ ^[0-9]+$ ]]; then :
+  else echo "ERR|durasi harus angka (hari) atau angka+m (menit)"; exit 1; fi
   exists "$cu" && { echo "ERR|$cu sudah ada di sistem"; exit 1; }
-  cexp=$(date -d "+$cdy days" +%F)
-  useradd -e "$cexp" -s /bin/false -M "$cu" 2>/dev/null || { echo "ERR|gagal membuat user sistem"; exit 1; }
+  if (( cmin > 0 )); then cexp=$(date -d "+$cmin minutes" +%F); else cexp=$(date -d "+$cdy days" +%F); fi
+  # user sistem trial jangan dikunci tanggal (kadaluarsa diurus "at"), sama
+  # seperti menu Trial biasa; kalau dikunci hari ini, login bisa langsung gagal.
+  if (( cmin > 0 )); then useradd -s /bin/false -M "$cu" 2>/dev/null || { echo "ERR|gagal membuat user sistem"; exit 1; }
+  else useradd -e "$cexp" -s /bin/false -M "$cu" 2>/dev/null || { echo "ERR|gagal membuat user sistem"; exit 1; }; fi
   printf '%s\n%s\n' "$cp" "$cp" | passwd "$cu" >/dev/null 2>&1
   lock_db; echo "$cu $cexp $cipl active" >> "$DB"; unlock_db
+  (( cmin > 0 )) && echo "/usr/local/sbin/m-ssh ssh --delete $cu" | at now + $cmin minutes >/dev/null 2>&1
   IPV=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
   echo "OK|$cu|$cp|$cexp"
   printf 'INFO|%s|%s\n' "Host/Domain"   "$DOMAIN"

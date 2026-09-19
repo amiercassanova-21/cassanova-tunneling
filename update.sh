@@ -6,8 +6,8 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.22.0"   # diisi otomatis dari file 'version' saat rilis
-GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
+SCVER="v1.23.0"   # diisi otomatis dari file 'version' saat rilis
+GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
 
@@ -306,6 +306,11 @@ mk_link(){ # net(ws|up|grpc|reality) tls(1|0)  -> pakai variabel ID & REM
     ws)   t=ws;          path=$WSPATH ;;
     up)   t=httpupgrade; path="/up$PROTO" ;;
     grpc) t=grpc;        path="$PROTO-grpc" ;;
+    # XHTTP punya port & TLS sendiri (tidak lewat nginx), jadi portnya ditimpa
+    xh)   t=xhttp;       path="/xh$PROTO"
+          port=$(cat $ASD/xhttp_port 2>/dev/null | tr -d '[:space:]')
+          [[ "$port" =~ ^[0-9]+$ ]] || port=2096
+          sec=tls ;;
   esac
   if [[ $PROTO == vmess ]]; then
     j=$(jq -nc --arg ps "$REM" --arg a "$DOMAIN" --arg id "$ID" --arg port "$port" --arg net "$t" --arg p "$path" \
@@ -318,7 +323,9 @@ mk_link(){ # net(ws|up|grpc|reality) tls(1|0)  -> pakai variabel ID & REM
   else
     qs="path=${path//\//%2F}&security=$sec"; [[ $PROTO == vless ]] && qs+="&encryption=none"; qs+="&host=$DOMAIN&type=$t"
   fi
-  [[ $2 == 1 ]] && qs+="&sni=$DOMAIN"
+  # XHTTP selalu TLS: sni & fingerprint ikut ditulis walau argumen kedua 0
+  if [[ $1 == xh ]]; then qs+="&fp=chrome&sni=$DOMAIN"
+  elif [[ $2 == 1 ]]; then qs+="&sni=$DOMAIN"; fi
   echo "$PROTO://$ID@$DOMAIN:$port?$qs#$REM"
 }
 
@@ -332,6 +339,13 @@ show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (aku
   ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
   row(){ printf " ${G}%-14s${N}: %b\n" "$1" "$2"; }
   sec(){ echo -e "$L2"; printf "${Y}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$L2"; }
+  # XHTTP hanya untuk VLESS, dan hanya kalau sudah benar-benar terpasang
+  local xhon=0 xhport=""
+  if [[ $PROTO == vless && -f $ASD/xhttp_on ]]; then
+    xhon=1; xhport=$(cat $ASD/xhttp_port 2>/dev/null | tr -d '[:space:]'); xhport=${xhport:-2096}
+  fi
+  local netlist="ws,grpc,upgrade"
+  (( xhon )) && netlist="ws,grpc,upgrade,xhttp"
   if [[ "$notif" == notif || "$notif" == quote ]]; then
     local BR="────────────────────────────────"
     local info="Remarks       : $REM
@@ -344,25 +358,26 @@ Port any      : 2052,2053,8880
 $(printf '%-13s' "$idlabel") : $ID"
     [[ $PROTO == vless ]] && info+=$'\n'"Encryption    : none"
     [[ $PROTO == vmess ]] && info+=$'\n'"alterId       : 0"$'\n'"Security      : auto"
-    info+=$'\n'"Network       : ws,grpc,upgrade
+    info+=$'\n'"Network       : $netlist
 Path ws       : $WSPATH
 serviceName   : $PROTO-grpc
-Path upgrade  : /up$PROTO
+Path upgrade  : /up$PROTO$( (( xhon )) && printf '\nPort xhttp    : %s (TLS)\nPath xhttp    : /xh%s' "$xhport" "$PROTO")
 Limit IP      : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")
 Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
 Expired On    : $exp"
     # tiap bagian dibungkus kotak sendiri supaya di Telegram bisa disalin satu per satu
     blk(){ printf '%s\n%s\n<code>%s</code>' "$BR" "$1" "$2"; }
-    local rbl=""
+    local rbl="" xbl=""
     [[ $PROTO == vless && -s $ASD/reality_pub ]] && \
       rbl=$'\n'"$(blk "🛡 <b>$UP REALITY</b>" "$(mk_link reality 1)")"
+    (( xhon )) && xbl=$'\n'"$(blk "🚀 <b>$UP XHTTP TLS</b>" "$(mk_link xh 1)")"
     local body="📋 <b>RINCIAN AKUN</b>
 <pre>$info</pre>
 $(blk "🔐 <b>$UP WS TLS</b>"          "$(mk_link ws 1)")
 $(blk "🔓 <b>$UP WS NON-TLS</b>"      "$(mk_link ws 0)")
 $(blk "⚡ <b>$UP GRPC</b>"                "$(mk_link grpc 1)")
 $(blk "🆙 <b>$UP UPGRADE TLS</b>"     "$(mk_link up 1)")
-$(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$rbl
+$(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$xbl$rbl
 $BR
 🔎 <b>CEK MASA AKTIF</b>
 <code>https://$DOMAIN/cek</code>
@@ -385,10 +400,11 @@ $BR
   if [[ $PROTO == trojan ]]; then row "Password" "$ID"; else row "id" "$ID"; fi
   [[ $PROTO == vless ]] && row "Encryption" "none"
   [[ $PROTO == vmess ]] && { row "alterId" "0"; row "Security" "auto"; }
-  row "Network" "ws,grpc,upgrade"
+  row "Network" "$netlist"
   row "Path ws" "$WSPATH"
   row "serviceName" "$PROTO-grpc"
   row "Path upgrade" "/up$PROTO"
+  (( xhon )) && { row "Port xhttp" "$xhport (TLS)"; row "Path xhttp" "/xh$PROTO"; }
   row "Limit IP" "$([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")"
   row "Kuota" "$([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")"
   row "Expired On" "${Y}$exp${N}"
@@ -397,6 +413,7 @@ $BR
   sec "$UP GRPC";            mk_link grpc 1
   sec "$UP Upgrade TLS";     mk_link up 1
   sec "$UP Upgrade NO TLS";  mk_link up 0
+  (( xhon )) && { sec "$UP XHTTP TLS"; mk_link xh 1; }
   if [[ $PROTO == vless && -s $ASD/reality_pub ]]; then sec "$UP REALITY"; mk_link reality 1; fi
   sec "CEK MASA AKTIF"
   echo -e " ${C}https://$DOMAIN/cek${N}"
@@ -707,19 +724,24 @@ find_acc(){ # $1=kode  $2=file (default DB) -> cetak username
 }
 case "$2" in
   --add) QUICK=1; create 0; exit 0 ;;
-  # --create user id hari limitip kuota : dipakai "Create All Protocol".
+  # --create user id durasi limitip kuota : dipakai "Create All Protocol".
+  # durasi = angka (hari)  atau  angka diakhiri "m" (menit, untuk trial).
   # Keluarannya baris berpemisah "|" supaya mudah dibaca script lain.
   --create)
-    cu=$3; cid=$4; cdy=$5; cipl=${6:-0}; cq=${7:-0}
+    cu=$3; cid=$4; cdy=$5; cipl=${6:-0}; cq=${7:-0}; cmin=0
     [[ "$cu" =~ ^[a-zA-Z0-9_-]{3,20}$ ]] || { echo "ERR|username tidak valid"; exit 1; }
-    [[ "$cdy" =~ ^[0-9]+$ ]] || { echo "ERR|durasi harus angka"; exit 1; }
+    if [[ "$cdy" =~ ^[0-9]+m$ ]]; then cmin=${cdy%m}; (( cmin > 0 )) || { echo "ERR|durasi menit harus > 0"; exit 1; }
+    elif [[ "$cdy" =~ ^[0-9]+$ ]]; then :
+    else echo "ERR|durasi harus angka (hari) atau angka+m (menit)"; exit 1; fi
     user_exists $PROTO "$cu" && { echo "ERR|$cu sudah ada di $UP"; exit 1; }
     [[ -z "$cid" ]] && cid=$(gen_id)
-    cexp=$(date -d "+$cdy days" +%F)
+    if (( cmin > 0 )); then cexp=$(date -d "+$cmin minutes" +%F); else cexp=$(date -d "+$cdy days" +%F); fi
     lock_db
     echo "$cu $cexp $cid $cipl $cq active" >> "$DB"
     xray_add $PROTO "$cu" "$cid"
     unlock_db
+    # trial: jadwalkan hapus otomatis, jangan menunggu cron harian
+    (( cmin > 0 )) && echo "/usr/local/sbin/m-xray $PROTO --delete $cu" | at now + $cmin minutes >/dev/null 2>&1
     REM=$cu; ID=$cid
     echo "OK|$cu|$cid|$cexp"
     printf 'LINK|%s WS TLS|%s\n'          "$UP" "$(mk_link ws 1)"
@@ -727,6 +749,8 @@ case "$2" in
     printf 'LINK|%s GRPC|%s\n'            "$UP" "$(mk_link grpc 1)"
     printf 'LINK|%s UPGRADE TLS|%s\n'     "$UP" "$(mk_link up 1)"
     printf 'LINK|%s UPGRADE NON-TLS|%s\n' "$UP" "$(mk_link up 0)"
+    [[ $PROTO == vless && -f $ASD/xhttp_on ]] && \
+      printf 'LINK|%s XHTTP TLS|%s\n' "$UP" "$(mk_link xh 1)"
     [[ $PROTO == vless && -s $ASD/reality_pub ]] && \
       printf 'LINK|%s REALITY|%s\n' "$UP" "$(mk_link reality 1)"
     exit 0 ;;
@@ -1045,16 +1069,18 @@ while true; do
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "4.)" "TROJAN" "9.)" "CHECK SERVICES"
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "5.)" "SETUP BOT" "x.)" "EXIT"
   printf "${B}│${N} ${C}%-4s${N} ${Y}%-35s${N}\n" "0.)" "CREATE ALL PROTOCOL"
+  printf "${B}│${N} ${C}%-4s${N} ${Y}%-35s${N}\n" "t.)" "TRIAL ALL PROTOCOL"
   bot
   echo
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [0-9 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [0-9, t, x] : ${N}")" opt
   trap ':' INT
   case $opt in
     # Modul di bawah ini menangani Ctrl-C sendiri (kembali ke menunya masing-
     # masing), jadi dipanggil langsung. Kalau dibungkus subshell, pembungkusnya
     # keluar duluan saat Ctrl-C padahal modulnya masih hidup -> layar bertumpuk.
     0) m-all ;;
+    t|T) m-all --trial ;;
     1) m-ssh ;;
     2) m-xray vmess ;;
     3) m-xray vless ;;
@@ -1118,17 +1144,46 @@ tg(){ # kirim satu pesan, berurutan (bukan latar belakang) agar urutannya benar
     "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
 }
 
-header "CREATE ALL PROTOCOL"
-echo -e " ${Y}Satu akun untuk SSH + VLESS + VMESS + TROJAN${N}\n"
-read -rp "Username : " U
-[[ "$U" =~ ^[a-z_][a-z0-9_-]{2,20}$ ]] || die "Username: huruf kecil/angka/-/_ , 3-21 karakter"
-id "$U" >/dev/null 2>&1 && die "Username $U sudah dipakai di sistem"
-for _p in vless vmess trojan; do   # jangan pakai $P: itu kode warna dari lib.sh
-  awk -v u="$U" '$1==u{f=1} END{exit !f}' $ASD/db/$_p.db 2>/dev/null && die "Username $U sudah ada di ${_p^^}"
-done
-read -rp "Masa aktif (hari) : " D; num_ok "$D" || die "Masa aktif harus angka"
-read -rp "Limit IP (0 = unlimited) [2] : " IPL; IPL=${IPL:-2}; num_ok "$IPL" || die "Limit IP harus angka"
-read -rp "Kuota GB (0 = unlimited) [0] : " Q; Q=${Q:-0}; num_ok "$Q" || die "Kuota harus angka"
+# Mode trial: "m-all --trial". Username dibuat sendiri, masa aktif dalam menit,
+# dan tiap protokol menjadwalkan hapus otomatis (lewat "at") begitu waktu habis.
+TRIAL=0; [[ "$1" == --trial ]] && TRIAL=1
+
+if (( TRIAL )); then
+  header "TRIAL ALL PROTOCOL"
+  echo -e " ${Y}Trial sekali klik: SSH + VLESS + VMESS + TROJAN${N}"
+  echo -e " ${Y}Akun terhapus sendiri saat waktunya habis${N}\n"
+  command -v at >/dev/null 2>&1 || die "Paket 'at' belum ada, trial tidak bisa dihapus otomatis"
+  read -rp "Durasi trial (menit) [60] : " D; D=${D:-60}
+  num_ok "$D" || die "Durasi harus angka"
+  (( D > 0 )) || die "Durasi harus lebih dari 0 menit"
+  IPL=1; Q=0
+  # cari nama trial yang belum terpakai di semua protokol
+  for _try in 1 2 3 4 5 6 7 8 9 10; do
+    U=$(gen_trial_user); _bentrok=0
+    id "$U" >/dev/null 2>&1 && _bentrok=1
+    for _p in vless vmess trojan; do
+      awk -v u="$U" '$1==u{f=1} END{exit !f}' $ASD/db/$_p.db 2>/dev/null && _bentrok=1
+    done
+    (( _bentrok )) || break
+    U=""
+  done
+  [[ -n "$U" ]] || die "Gagal mencari nama trial yang kosong, coba lagi"
+  echo -e "\n ${G}Username trial :${N} ${Y}$U${N}"
+  DARG="${D}m"; DLAB="$D menit"
+else
+  header "CREATE ALL PROTOCOL"
+  echo -e " ${Y}Satu akun untuk SSH + VLESS + VMESS + TROJAN${N}\n"
+  read -rp "Username : " U
+  [[ "$U" =~ ^[a-z_][a-z0-9_-]{2,20}$ ]] || die "Username: huruf kecil/angka/-/_ , 3-21 karakter"
+  id "$U" >/dev/null 2>&1 && die "Username $U sudah dipakai di sistem"
+  for _p in vless vmess trojan; do   # jangan pakai $P: itu kode warna dari lib.sh
+    awk -v u="$U" '$1==u{f=1} END{exit !f}' $ASD/db/$_p.db 2>/dev/null && die "Username $U sudah ada di ${_p^^}"
+  done
+  read -rp "Masa aktif (hari) : " D; num_ok "$D" || die "Masa aktif harus angka"
+  read -rp "Limit IP (0 = unlimited) [2] : " IPL; IPL=${IPL:-2}; num_ok "$IPL" || die "Limit IP harus angka"
+  read -rp "Kuota GB (0 = unlimited) [0] : " Q; Q=${Q:-0}; num_ok "$Q" || die "Kuota harus angka"
+  DARG="$D"; DLAB=""
+fi
 
 PASS=$(rnd 10); [[ ${#PASS} -ge 6 ]] || PASS="cas$(date +%s | tail -c 6)"
 UUID=$(gen_id)
@@ -1156,10 +1211,10 @@ run(){ # $1 = label  $2 = file hasil  sisanya perintah
     die "Akun dibatalkan. Tidak ada yang tertinggal setengah jadi."
   fi
 }
-run SSH    "$TMPD/ssh" /usr/local/sbin/m-ssh  ssh    --create "$U" "$PASS" "$D" "$IPL";       DONE="$DONE ssh"
-run VLESS  "$TMPD/vl"  /usr/local/sbin/m-xray vless  --create "$U" "$UUID" "$D" "$IPL" "$Q";  DONE="$DONE vless"
-run VMESS  "$TMPD/vm"  /usr/local/sbin/m-xray vmess  --create "$U" "$UUID" "$D" "$IPL" "$Q";  DONE="$DONE vmess"
-run TROJAN "$TMPD/tr"  /usr/local/sbin/m-xray trojan --create "$U" "$UUID" "$D" "$IPL" "$Q";  DONE="$DONE trojan"
+run SSH    "$TMPD/ssh" /usr/local/sbin/m-ssh  ssh    --create "$U" "$PASS" "$DARG" "$IPL";       DONE="$DONE ssh"
+run VLESS  "$TMPD/vl"  /usr/local/sbin/m-xray vless  --create "$U" "$UUID" "$DARG" "$IPL" "$Q";  DONE="$DONE vless"
+run VMESS  "$TMPD/vm"  /usr/local/sbin/m-xray vmess  --create "$U" "$UUID" "$DARG" "$IPL" "$Q";  DONE="$DONE vmess"
+run TROJAN "$TMPD/tr"  /usr/local/sbin/m-xray trojan --create "$U" "$UUID" "$DARG" "$IPL" "$Q";  DONE="$DONE trojan"
 OUT_SSH=$(cat "$TMPD/ssh"); OUT_VL=$(cat "$TMPD/vl")
 OUT_VM=$(cat "$TMPD/vm");   OUT_TR=$(cat "$TMPD/tr")
 trap - INT           # pembuatan selesai, Ctrl-C boleh lagi
@@ -1168,14 +1223,17 @@ EXP=$(awk -F'|' '/^OK\|/{print $4; exit}' <<< "$OUT_SSH")
 IPV=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
 ILAB=$([[ "$IPL" == 0 ]] && echo Unlimited || echo "$IPL IP")
 QLAB=$([[ "$Q" == 0 ]] && echo Unlimited || echo "$Q GB")
+# trial: yang dibaca pembeli adalah "60 menit", bukan tanggal hari ini
+if (( TRIAL )); then EXPLAB="$DLAB"; JUDUL="AKUN TRIAL SEMUA PROTOKOL"; IKON="⏱"
+else EXPLAB="$EXP"; JUDUL="AKUN SEMUA PROTOKOL"; IKON="🎁"; fi
 
 # ---------------- tampilan terminal ----------------
-header "AKUN SEMUA PROTOKOL"
+header "$JUDUL"
 printf " ${G}%-14s${N}: ${Y}%s${N}\n" "Username" "$U"
 printf " ${G}%-14s${N}: ${Y}%s${N}\n" "Password SSH" "$PASS"
 printf " ${G}%-14s${N}: ${Y}%s${N}\n" "UUID Xray" "$UUID"
 printf " ${G}%-14s${N}: %s\n" "Domain" "$DOMAIN" "IP" "$IPV" "Limit IP" "$ILAB" "Kuota" "$QLAB"
-printf " ${G}%-14s${N}: ${Y}%s${N}\n" "Expired On" "$EXP"
+printf " ${G}%-14s${N}: ${Y}%s${N}\n" "$( (( TRIAL )) && echo "Masa Trial" || echo "Expired On" )" "$EXPLAB"
 sec "SSH / OPENVPN"
 awk -F'|' '/^INFO\|/{printf "  %-14s: %s\n",$2,$3}' <<< "$OUT_SSH"
 for blok in "$OUT_VL" "$OUT_VM" "$OUT_TR"; do
@@ -1186,13 +1244,14 @@ for blok in "$OUT_VL" "$OUT_VM" "$OUT_TR"; do
 done
 sec "CEK MASA AKTIF"
 echo "https://$DOMAIN/cek"
+(( TRIAL )) && { echo -e "${B}$BR${N}"; echo -e " ${Y}Akun trial $DLAB, terhapus otomatis saat habis.${N}"; }
 echo -e "$LINE"
 
 # ---------------- kirim ke Telegram (4 pesan berurutan) ----------------
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
   echo -e "\n ${G}Mengirim ke Telegram...${N}"
   L="━━━━━━━━━━━━━━━━━━━━"
-  M1="🎁 <b>AKUN SEMUA PROTOKOL</b>
+  M1="$IKON <b>$JUDUL</b>
 $L
 📋 <b>RINCIAN AKUN</b>
 <pre>Username   : $U
@@ -1202,7 +1261,7 @@ Domain     : $DOMAIN
 IP         : $IPV
 Limit IP   : $ILAB
 Kuota      : $QLAB
-Expired On : $EXP</pre>
+$( (( TRIAL )) && printf '%-11s: %s' "Masa Trial" "$EXPLAB" || printf '%-11s: %s' "Expired On" "$EXPLAB" )</pre>
 $L
 🔐 <b>SSH / OPENVPN</b>
 <pre>$(awk -F'|' '/^INFO\|/{printf "%-13s: %s\n",$2,$3}' <<< "$OUT_SSH")</pre>
@@ -1210,7 +1269,7 @@ $L
 🔎 <b>CEK MASA AKTIF</b>
 <code>https://$DOMAIN/cek</code>
 $L
-<i>Config VLESS, VMESS, dan TROJAN menyusul di pesan berikutnya.</i>"
+$( (( TRIAL )) && echo "⚠️ <b>Akun trial $DLAB.</b> Terhapus otomatis saat waktunya habis." && echo "$L" )<i>Config VLESS, VMESS, dan TROJAN menyusul di pesan berikutnya.</i>"
   tg "$M1"
   kirim_proto(){ # $1 = ikon  $2 = judul  $3 = blok keluaran
     local t="$1 <b>$2</b>
@@ -1240,7 +1299,11 @@ cat > /usr/local/sbin/addall <<'EOF'
 #!/bin/bash
 exec /usr/local/sbin/m-all
 EOF
-chmod +x /usr/local/sbin/addall
+cat > /usr/local/sbin/trialall <<'EOF'
+#!/bin/bash
+exec /usr/local/sbin/m-all --trial
+EOF
+chmod +x /usr/local/sbin/addall /usr/local/sbin/trialall
 
 cat > /usr/local/sbin/renewsc <<'RSC'
 #!/bin/bash
@@ -1325,6 +1388,41 @@ jq '
         .inbounds += [ $w | .tag=($p+"-up") | .port=(10021+$i)
                          | .streamSettings={network:"httpupgrade",httpupgradeSettings:{path:("/up"+$p)}} ] end)
   )' $CFG > $CFG.tmp && mv $CFG.tmp $CFG
+
+# =====================================================
+#  VLESS XHTTP (port sendiri, TLS diurus Xray, tanpa nginx)
+# =====================================================
+# Kenapa tidak lewat nginx: XHTTP modern memakai mode stream-up/stream-one yang
+# butuh reverse proxy full-duplex (grpc_pass). Lewat proxy_pass HTTP/1.1 nginx
+# hasilnya tidak bisa diandalkan. Jadi XHTTP diberi port sendiri dan TLS-nya
+# dipegang Xray langsung - pola yang sama seperti REALITY di script ini, dan
+# sudah diuji utuh (unduh besar, unggah, banyak sesi berurutan).
+# Sertifikat dibaca dari berkas dengan oneTimeLoading:false, sehingga saat
+# acme.sh memperbarui SSL, Xray membaca sendiri tanpa restart (koneksi aman).
+XHPORT=$(cat /etc/autoscript/xhttp_port 2>/dev/null | tr -d '[:space:]')
+[[ "$XHPORT" =~ ^[0-9]+$ ]] || XHPORT=2096
+if ! jq -e 'any(.inbounds[]; .tag=="vless-xh")' $CFG >/dev/null 2>&1; then
+  cp -f $CFG $CFG.bak-xh
+  jq --argjson xp "$XHPORT" '
+    ([.inbounds[]|select(.tag=="vless-ws")][0]) as $w
+    | if $w == null then . else
+        .inbounds += [ $w
+          | .tag="vless-xh" | .listen="0.0.0.0" | .port=$xp
+          | .streamSettings={ network:"xhttp", security:"tls",
+              tlsSettings:{ oneTimeLoading:false, alpn:["h2","http/1.1"],
+                certificates:[{ certificateFile:"/etc/autoscript/xray.crt",
+                                keyFile:"/etc/autoscript/xray.key" }] },
+              xhttpSettings:{ path:"/xhvless", mode:"auto" } } ]
+      end' $CFG > $CFG.tmp && mv $CFG.tmp $CFG
+  if xray run -test -config $CFG >/dev/null 2>&1; then
+    echo "$XHPORT" > /etc/autoscript/xhttp_port
+    echo -e "${GRN}[XHTTP] VLESS XHTTP dipasang di port $XHPORT${NC}"
+  else
+    cp -f $CFG.bak-xh $CFG
+    echo -e "${YEL}[XHTTP] Xray di VPS ini belum mendukung XHTTP, fitur dilewati${NC}"
+  fi
+  rm -f $CFG.bak-xh
+fi
 
 # =====================================================
 #  VLESS REALITY (TCP langsung, tanpa nginx & tanpa SSL)
@@ -1779,6 +1877,26 @@ if xray run -test -config $CFG >/dev/null 2>&1; then
   fi
 else
   echo -e "${RED}Config Xray tidak valid, cek: xray run -test -config $CFG${NC}"
+fi
+
+# Penanda XHTTP: link XHTTP baru ditampilkan kalau inbound-nya ada DAN portnya
+# benar-benar sudah mendengarkan. Jadi pembeli tidak pernah menerima link mati.
+XHPORT=$(cat /etc/autoscript/xhttp_port 2>/dev/null | tr -d '[:space:]')
+[[ "$XHPORT" =~ ^[0-9]+$ ]] || XHPORT=2096
+if jq -e 'any(.inbounds[]; .tag=="vless-xh")' $CFG >/dev/null 2>&1; then
+  for _i in 1 2 3 4 5 6; do
+    if ss -tln 2>/dev/null | grep -q ":$XHPORT "; then break; fi
+    sleep 1
+  done
+  if ss -tln 2>/dev/null | grep -q ":$XHPORT "; then
+    touch /etc/autoscript/xhttp_on
+    echo -e "${GRN}[XHTTP] Siap: VLESS XHTTP TLS di port $XHPORT${NC}"
+  else
+    rm -f /etc/autoscript/xhttp_on
+    echo -e "${YEL}[XHTTP] Port $XHPORT belum mendengarkan, link XHTTP disembunyikan dulu${NC}"
+  fi
+else
+  rm -f /etc/autoscript/xhttp_on
 fi
 
 echo -e "${GRN}==============================================${NC}"

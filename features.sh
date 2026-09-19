@@ -226,6 +226,7 @@ r "restore"           "buka menu restore backup"
 r "restore <link>"    "restore langsung dari link, tanpa upload"
 echo -e "\n ${Y}AKUN XRAY (vless / vmess / trojan)${N}"
 r "addall"            "buat 1 akun untuk SEMUA protokol sekaligus"
+r "trialall"          "buat akun TRIAL untuk semua protokol (hapus sendiri)"
 r "addvless"          "buat akun VLESS baru"
 r "renewvless <kode>" "perpanjang akun (kuota ikut direset)"
 r "delvless <kode>"   "hapus akun (masuk daftar recovery)"
@@ -640,6 +641,8 @@ cek_port(){
   )
   local rp; rp=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
   [[ "$rp" =~ ^[0-9]+$ ]] && ports+=("$rp|VLESS Reality")
+  local xp; xp=$(cat $ASD/xhttp_port 2>/dev/null | tr -d '[:space:]')
+  [[ "$xp" =~ ^[0-9]+$ && -f $ASD/xhttp_on ]] && ports+=("$xp|VLESS XHTTP TLS")
   local listen; listen=$(ss -Hltn 2>/dev/null | awk '{print $4}' | sed 's/.*://')
   printf " ${G}%-6s %-18s %s${N}\n" "PORT" "LAYANAN" "STATUS"
   echo -e "$LINE"
