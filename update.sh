@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.16.1"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.17.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -321,44 +321,41 @@ show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (aku
   sec(){ echo -e "$L2"; printf "${Y}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$L2"; }
   if [[ "$notif" == notif || "$notif" == quote ]]; then
     local BR="────────────────────────────────"
-    local EQ="════════════════════════════════"
-    local info="$EQ
-           $UP ACCOUNT
-$EQ
- Remarks       : $REM
- CITY          : $CITY
- ISP           : $ISP
- Domain        : $DOMAIN
- Port TLS      : 443,8443
- Port none TLS : 80,8080
- Port any      : 2052,2053,8880
- $(printf '%-13s' "$idlabel") : $ID"
-    [[ $PROTO == vless ]] && info+=$'\n'" Encryption    : none"
-    [[ $PROTO == vmess ]] && info+=$'\n'" alterId       : 0"$'\n'" Security      : auto"
-    info+=$'\n'" Network       : ws,grpc,upgrade
- Path ws       : $WSPATH
- serviceName   : $PROTO-grpc
- Path upgrade  : /up$PROTO
- Limit IP      : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")
- Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
- Expired On    : $exp"
-    lnk(){ printf '%s\n%*s\n%s\n%s' "$BR" $(( (32+${#1})/2 )) "$1" "$BR" "$2"; }
-    local body="<code>$info
-$(lnk "$UP WS TLS" "$(mk_link ws 1)")
-$(lnk "$UP WS NO TLS" "$(mk_link ws 0)")
-$(lnk "$UP GRPC" "$(mk_link grpc 1)")
-$(lnk "$UP Upgrade TLS" "$(mk_link up 1)")
-$(lnk "$UP Upgrade NO TLS" "$(mk_link up 0)")
+    local info="Remarks       : $REM
+CITY          : $CITY
+ISP           : $ISP
+Domain        : $DOMAIN
+Port TLS      : 443,8443
+Port none TLS : 80,8080
+Port any      : 2052,2053,8880
+$(printf '%-13s' "$idlabel") : $ID"
+    [[ $PROTO == vless ]] && info+=$'\n'"Encryption    : none"
+    [[ $PROTO == vmess ]] && info+=$'\n'"alterId       : 0"$'\n'"Security      : auto"
+    info+=$'\n'"Network       : ws,grpc,upgrade
+Path ws       : $WSPATH
+serviceName   : $PROTO-grpc
+Path upgrade  : /up$PROTO
+Limit IP      : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")
+Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
+Expired On    : $exp"
+    # tiap bagian dibungkus kotak sendiri supaya di Telegram bisa disalin satu per satu
+    blk(){ printf '%s\n%s\n<code>%s</code>' "$BR" "$1" "$2"; }
+    local body="📋 <b>RINCIAN AKUN</b>
+<pre>$info</pre>
+$(blk "🔐 <b>$UP WS TLS</b>"          "$(mk_link ws 1)")
+$(blk "🔓 <b>$UP WS NON-TLS</b>"      "$(mk_link ws 0)")
+$(blk "⚡ <b>$UP GRPC</b>"                "$(mk_link grpc 1)")
+$(blk "🆙 <b>$UP UPGRADE TLS</b>"     "$(mk_link up 1)")
+$(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")
 $BR
-       CEK MASA AKTIF
+🔎 <b>CEK MASA AKTIF</b>
+<code>https://$DOMAIN/cek</code>
+Buka link di atas, pilih $UP, lalu tempel $idlabel akun ini
+untuk melihat sisa masa aktif dan kuota.
 $BR
-https://$DOMAIN/cek
-
-Buka link di atas, pilih $UP,
-lalu tempel $idlabel akun ini untuk
-melihat sisa masa aktif & kuota.
-$BR</code>"
-    if [[ "$notif" == quote ]]; then cas_notify_quote "$ntitle" "$body"; else cas_notify_raw "🆕 <b>$ntitle</b>"$'\n'"$body"; fi
+<i>Ketuk tiap kotak untuk menyalin satu per satu.</i>"
+    local icon="🆕"; [[ "$notif" == quote ]] && icon="♻️"
+    cas_notify_raw "$icon <b>$ntitle</b>"$'\n'"$body"
   fi
   clear
   echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#UP}+8)/2 )) "$UP ACCOUNT"; echo -e "$LINE"

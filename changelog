@@ -1,7 +1,9 @@
-v1.16.1
-- Layar konfirmasi restore kini memberi tahu kalau domain di backup belum
-  mengarah ke VPS ini, beserta jalan tercepatnya:
-  kalau VPS lama sudah mati, ubah A record dulu SEBELUM lanjut, maka
-  sertifikat SSL langsung terbit saat restore tanpa menunggu.
-  Kalau VPS lama masih dipakai, restore dulu lalu pointing diubah nanti.
-- Keterangan ini hanya muncul saat memang relevan (domain belum diarahkan).
+v1.17.0
+- Output akun di Telegram (saat create, trial, dan recovery) kini terbagi
+  jadi kotak-kotak terpisah, sehingga bisa disalin satu per satu:
+  rincian akun sendiri, dan tiap config (WS TLS, WS non-TLS, gRPC,
+  Upgrade TLS, Upgrade non-TLS) punya kotak salin masing-masing.
+  Sebelumnya sekali ketuk menyalin seluruh isi pesan.
+- Rincian akun yang disalin kini bersih tanpa garis pembatas.
+- Setiap bagian diberi ikon supaya mudah dibedakan saat digeser.
+- Tampilan di terminal VPS tidak berubah.
