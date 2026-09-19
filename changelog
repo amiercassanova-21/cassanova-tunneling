@@ -1,12 +1,12 @@
-v1.20.0
-- Perbaikan penting Reality: domain kamuflase bawaan diganti dari
-  www.microsoft.com ke www.asus.com. Ternyata www.microsoft.com tidak bisa
-  dipakai karena rantai sertifikatnya terlalu besar sehingga jabat tangan
-  tidak pernah selesai, dan Reality menolak setiap klien tanpa pesan apa pun.
-  VPS yang masih memakainya dipindahkan otomatis saat update.
-- Baru: pencarian domain kamuflase otomatis (menu Setelan VLESS Reality -> 2).
-  Script menguji 8 kandidat dengan koneksi Reality sungguhan, lalu menampilkan
-  mana saja yang bisa dipakai untuk dipilih.
-- Mengisi domain kamuflase sendiri kini juga diuji dulu sebelum disimpan,
-  bukan sekadar dicek TLS 1.3-nya.
-- Perintah baru untuk menguji satu domain: cas-reality --test <domain>
+v1.21.0
+- Baru: CREATE ALL PROTOCOL. Satu kali isi, langsung jadi akun SSH, VLESS,
+  VMESS, dan TROJAN sekaligus dengan UUID yang sama. Ada di menu utama
+  pilihan 0, atau lewat perintah: addall
+- Username diisi sendiri, password SSH dan UUID dibuat acak otomatis.
+- Dikirim ke Telegram sebagai 4 pesan berurutan (ringkasan + SSH, lalu
+  VLESS, VMESS, TROJAN) karena kalau digabung melebihi batas Telegram.
+  Tiap config tetap punya kotak salin sendiri.
+- Kalau salah satu protokol gagal dibuat, yang sudah terlanjur dibuat
+  dihapus kembali, jadi tidak ada akun yang tertinggal setengah jadi.
+- Tambahan untuk keperluan lain: m-xray <proto> --create dan
+  m-ssh ssh --create kini bisa dipanggil non-interaktif.

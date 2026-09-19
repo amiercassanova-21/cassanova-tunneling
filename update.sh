@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.20.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.21.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -703,6 +703,29 @@ find_acc(){ # $1=kode  $2=file (default DB) -> cetak username
 }
 case "$2" in
   --add) QUICK=1; create 0; exit 0 ;;
+  # --create user id hari limitip kuota : dipakai "Create All Protocol".
+  # Keluarannya baris berpemisah "|" supaya mudah dibaca script lain.
+  --create)
+    cu=$3; cid=$4; cdy=$5; cipl=${6:-0}; cq=${7:-0}
+    [[ "$cu" =~ ^[a-zA-Z0-9_-]{3,20}$ ]] || { echo "ERR|username tidak valid"; exit 1; }
+    [[ "$cdy" =~ ^[0-9]+$ ]] || { echo "ERR|durasi harus angka"; exit 1; }
+    user_exists $PROTO "$cu" && { echo "ERR|$cu sudah ada di $UP"; exit 1; }
+    [[ -z "$cid" ]] && cid=$(gen_id)
+    cexp=$(date -d "+$cdy days" +%F)
+    lock_db
+    echo "$cu $cexp $cid $cipl $cq active" >> "$DB"
+    xray_add $PROTO "$cu" "$cid"
+    unlock_db
+    REM=$cu; ID=$cid
+    echo "OK|$cu|$cid|$cexp"
+    printf 'LINK|%s WS TLS|%s\n'          "$UP" "$(mk_link ws 1)"
+    printf 'LINK|%s WS NON-TLS|%s\n'      "$UP" "$(mk_link ws 0)"
+    printf 'LINK|%s GRPC|%s\n'            "$UP" "$(mk_link grpc 1)"
+    printf 'LINK|%s UPGRADE TLS|%s\n'     "$UP" "$(mk_link up 1)"
+    printf 'LINK|%s UPGRADE NON-TLS|%s\n' "$UP" "$(mk_link up 0)"
+    [[ $PROTO == vless && -s $ASD/reality_pub ]] && \
+      printf 'LINK|%s REALITY|%s\n' "$UP" "$(mk_link reality 1)"
+    exit 0 ;;
   --renew|--del|--recovery)
     QUICK=1
     src="$DB"; [[ "$2" == "--recovery" ]] && src="$TRASH"
@@ -1011,10 +1034,12 @@ while true; do
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "3.)" "VLESS" "8.)" "SET BRAND NAME"
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "4.)" "TROJAN" "9.)" "CHECK SERVICES"
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "5.)" "SETUP BOT" "x.)" "EXIT"
+  printf "${B}│${N} ${C}%-4s${N} ${Y}%-35s${N}\n" "0.)" "CREATE ALL PROTOCOL"
   bot
   echo
-  read -rp "$(echo -e "${G}Select From Options [1-9 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [0-9 or x] : ${N}")" opt
   case $opt in
+    0) m-all ;;
     1) m-ssh ;;
     2) m-xray vmess ;;
     3) m-xray vless ;;
@@ -1052,6 +1077,153 @@ printf "${G}%-16s${N}: %b\n" \
 echo -e "\n${B}════════════════════════════════════${N}\n"
 read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"
 EOF
+
+# =====================================================
+#  CREATE ALL PROTOCOL (SSH + VLESS + VMESS + TROJAN)
+# =====================================================
+cat > /usr/local/sbin/m-all <<'EOF'
+#!/bin/bash
+. /usr/local/lib/autoscript/lib.sh
+DOMAIN=$(cat $ASD/domain)
+LINE="${B}════════════════════════════════════${N}"
+BR="────────────────────────────────"
+header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
+sec(){ echo -e "${B}$BR${N}"; printf "${Y}%*s${N}\n" $(( (32+${#1})/2 )) "$1"; echo -e "${B}$BR${N}"; }
+die(){ echo -e "\n ${R}$1${N}\n"; read -rp "Tekan Enter..."; exit 1; }
+num_ok(){ [[ "$1" =~ ^[0-9]+$ ]]; }
+rnd(){ head -c 200 /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c "${1:-8}"; }
+
+BOT_TOKEN=""; CHAT_ID=""; NOTIFY="off"
+[[ -f $ASD/bot ]] && . $ASD/bot
+tg(){ # kirim satu pesan, berurutan (bukan latar belakang) agar urutannya benar
+  [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && return 0
+  curl -s --max-time 25 -o /dev/null \
+    --data-urlencode "chat_id=$CHAT_ID" --data-urlencode "parse_mode=HTML" \
+    --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=$1" \
+    "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
+}
+
+header "CREATE ALL PROTOCOL"
+echo -e " ${Y}Satu akun untuk SSH + VLESS + VMESS + TROJAN${N}\n"
+read -rp "Username : " U
+[[ "$U" =~ ^[a-z_][a-z0-9_-]{2,20}$ ]] || die "Username: huruf kecil/angka/-/_ , 3-21 karakter"
+id "$U" >/dev/null 2>&1 && die "Username $U sudah dipakai di sistem"
+for _p in vless vmess trojan; do   # jangan pakai $P: itu kode warna dari lib.sh
+  awk -v u="$U" '$1==u{f=1} END{exit !f}' $ASD/db/$_p.db 2>/dev/null && die "Username $U sudah ada di ${_p^^}"
+done
+read -rp "Masa aktif (hari) : " D; num_ok "$D" || die "Masa aktif harus angka"
+read -rp "Limit IP (0 = unlimited) [2] : " IPL; IPL=${IPL:-2}; num_ok "$IPL" || die "Limit IP harus angka"
+read -rp "Kuota GB (0 = unlimited) [0] : " Q; Q=${Q:-0}; num_ok "$Q" || die "Kuota harus angka"
+
+PASS=$(rnd 10); [[ ${#PASS} -ge 6 ]] || PASS="cas$(date +%s | tail -c 6)"
+UUID=$(gen_id)
+echo -e "\n ${G}Membuat akun...${N}"
+
+DONE=""
+rollback(){
+  local p
+  for p in $DONE; do
+    [[ "$p" == ssh ]] && /usr/local/sbin/m-ssh ssh --delete "$U" >/dev/null 2>&1 \
+                      || /usr/local/sbin/m-xray "$p" --delete "$U" >/dev/null 2>&1
+  done
+}
+TMPD=$(mktemp -d) || die "Tidak bisa membuat folder sementara"
+trap 'rm -rf "$TMPD"' EXIT
+# JANGAN pakai $(run ...): pesan error ikut tertelan dan "exit" hanya keluar
+# dari subshell, sehingga script lanjut padahal pembuatan gagal.
+run(){ # $1 = label  $2 = file hasil  sisanya perintah
+  local lbl=$1 dest=$2; shift 2
+  "$@" > "$dest" 2>/dev/null
+  if [[ ! -s "$dest" ]] || grep -q '^ERR|' "$dest"; then
+    echo -e " ${R}Gagal membuat $lbl: $(sed -n 's/^ERR|//p' "$dest" | head -1)${N}"
+    rollback
+    die "Akun dibatalkan. Tidak ada yang tertinggal setengah jadi."
+  fi
+}
+run SSH    "$TMPD/ssh" /usr/local/sbin/m-ssh  ssh    --create "$U" "$PASS" "$D" "$IPL";       DONE="$DONE ssh"
+run VLESS  "$TMPD/vl"  /usr/local/sbin/m-xray vless  --create "$U" "$UUID" "$D" "$IPL" "$Q";  DONE="$DONE vless"
+run VMESS  "$TMPD/vm"  /usr/local/sbin/m-xray vmess  --create "$U" "$UUID" "$D" "$IPL" "$Q";  DONE="$DONE vmess"
+run TROJAN "$TMPD/tr"  /usr/local/sbin/m-xray trojan --create "$U" "$UUID" "$D" "$IPL" "$Q";  DONE="$DONE trojan"
+OUT_SSH=$(cat "$TMPD/ssh"); OUT_VL=$(cat "$TMPD/vl")
+OUT_VM=$(cat "$TMPD/vm");   OUT_TR=$(cat "$TMPD/tr")
+
+EXP=$(awk -F'|' '/^OK\|/{print $4; exit}' <<< "$OUT_SSH")
+IPV=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
+ILAB=$([[ "$IPL" == 0 ]] && echo Unlimited || echo "$IPL IP")
+QLAB=$([[ "$Q" == 0 ]] && echo Unlimited || echo "$Q GB")
+
+# ---------------- tampilan terminal ----------------
+header "AKUN SEMUA PROTOKOL"
+printf " ${G}%-14s${N}: ${Y}%s${N}\n" "Username" "$U"
+printf " ${G}%-14s${N}: ${Y}%s${N}\n" "Password SSH" "$PASS"
+printf " ${G}%-14s${N}: ${Y}%s${N}\n" "UUID Xray" "$UUID"
+printf " ${G}%-14s${N}: %s\n" "Domain" "$DOMAIN" "IP" "$IPV" "Limit IP" "$ILAB" "Kuota" "$QLAB"
+printf " ${G}%-14s${N}: ${Y}%s${N}\n" "Expired On" "$EXP"
+sec "SSH / OPENVPN"
+awk -F'|' '/^INFO\|/{printf "  %-14s: %s\n",$2,$3}' <<< "$OUT_SSH"
+for blok in "$OUT_VL" "$OUT_VM" "$OUT_TR"; do
+  while IFS='|' read -r t lbl val; do
+    [[ "$t" == LINK ]] || continue
+    sec "$lbl"; echo "$val"
+  done <<< "$blok"
+done
+sec "CEK MASA AKTIF"
+echo "https://$DOMAIN/cek"
+echo -e "$LINE"
+
+# ---------------- kirim ke Telegram (4 pesan berurutan) ----------------
+if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+  echo -e "\n ${G}Mengirim ke Telegram...${N}"
+  L="━━━━━━━━━━━━━━━━━━━━"
+  M1="🎁 <b>AKUN SEMUA PROTOKOL</b>
+$L
+📋 <b>RINCIAN AKUN</b>
+<pre>Username   : $U
+Password   : $PASS
+UUID       : $UUID
+Domain     : $DOMAIN
+IP         : $IPV
+Limit IP   : $ILAB
+Kuota      : $QLAB
+Expired On : $EXP</pre>
+$L
+🔐 <b>SSH / OPENVPN</b>
+<pre>$(awk -F'|' '/^INFO\|/{printf "%-13s: %s\n",$2,$3}' <<< "$OUT_SSH")</pre>
+$L
+🔎 <b>CEK MASA AKTIF</b>
+<code>https://$DOMAIN/cek</code>
+$L
+<i>Config VLESS, VMESS, dan TROJAN menyusul di pesan berikutnya.</i>"
+  tg "$M1"
+  kirim_proto(){ # $1 = ikon  $2 = judul  $3 = blok keluaran
+    local t="$1 <b>$2</b>
+$L"
+    while IFS='|' read -r ty lbl val; do
+      [[ "$ty" == LINK ]] || continue
+      t="$t
+$lbl
+<code>$val</code>
+$L"
+    done <<< "$3"
+    t="$t
+<i>Ketuk tiap kotak untuk menyalin.</i>"
+    tg "$t"
+  }
+  kirim_proto "⚡" "CONFIG VLESS"  "$OUT_VL"
+  kirim_proto "🌀" "CONFIG VMESS"  "$OUT_VM"
+  kirim_proto "🛡" "CONFIG TROJAN" "$OUT_TR"
+  echo -e " ${G}Terkirim (4 pesan)${N}"
+else
+  echo -e "\n ${Y}Bot belum diatur, akun hanya ditampilkan di sini${N}"
+fi
+echo; read -rp "$(echo -e "${P}Press Enter for Back to Menu${N}")"
+EOF
+chmod +x /usr/local/sbin/m-all
+cat > /usr/local/sbin/addall <<'EOF'
+#!/bin/bash
+exec /usr/local/sbin/m-all
+EOF
+chmod +x /usr/local/sbin/addall
 
 cat > /usr/local/sbin/renewsc <<'RSC'
 #!/bin/bash

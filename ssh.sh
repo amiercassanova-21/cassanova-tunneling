@@ -415,6 +415,31 @@ edit_limit(){ # all(0/1)
   unlock_db; echo -e "${G}Tersimpan${N}"; pause
 }
 
+# --create user pass hari limitip : dipakai "Create All Protocol"
+if [[ "$2" == "--create" ]]; then
+  cu=$3; cp=$4; cdy=$5; cipl=${6:-0}
+  [[ "$cu" =~ ^[a-z_][a-z0-9_-]{2,20}$ ]] || { echo "ERR|username SSH tidak valid"; exit 1; }
+  [[ -n "$cp" ]] || { echo "ERR|password kosong"; exit 1; }
+  [[ "$cdy" =~ ^[0-9]+$ ]] || { echo "ERR|durasi harus angka"; exit 1; }
+  exists "$cu" && { echo "ERR|$cu sudah ada di sistem"; exit 1; }
+  cexp=$(date -d "+$cdy days" +%F)
+  useradd -e "$cexp" -s /bin/false -M "$cu" 2>/dev/null || { echo "ERR|gagal membuat user sistem"; exit 1; }
+  printf '%s\n%s\n' "$cp" "$cp" | passwd "$cu" >/dev/null 2>&1
+  lock_db; echo "$cu $cexp $cipl active" >> "$DB"; unlock_db
+  IPV=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
+  echo "OK|$cu|$cp|$cexp"
+  printf 'INFO|%s|%s\n' "Host/Domain"   "$DOMAIN"
+  printf 'INFO|%s|%s\n' "IP"            "$IPV"
+  printf 'INFO|%s|%s\n' "Port OpenSSH"  "22"
+  printf 'INFO|%s|%s\n' "Port Dropbear" "143, 109"
+  printf 'INFO|%s|%s\n' "Port SSH WS"   "80, 443 (path /ssh-ws)"
+  printf 'INFO|%s|%s\n' "Port SSL/TLS"  "443"
+  printf 'INFO|%s|%s\n' "BadVPN UDP"    "7100-7900"
+  printf 'INFO|%s|%s\n' "HTTP Custom"   "$DOMAIN:22@$cu:$cp"
+  printf 'INFO|%s|%s\n' "Payload WS"    "GET / HTTP/1.1[crlf]Host: $DOMAIN[crlf]Upgrade: websocket[crlf][crlf]"
+  exit 0
+fi
+
 while true; do
   header "SSH-DROPBEAR-OPENVPN"
   echo -e "\n ${C}1.)${N}  Create"
