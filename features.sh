@@ -302,6 +302,36 @@ restore_info(){ # $1 = file zip -> set RB_DOMAIN RB_IP RB_DATE RB_ACC
   done
 }
 
+# ---- pulihkan akun SSH dari backup TANPA menimpa /etc/passwd sistem ----
+# /etc/passwd, shadow, group, gshadow milik OS dan berbeda antara Debian/Ubuntu,
+# bahkan antar versi. Menimpanya membuat layanan sistem (mis. systemd-resolved)
+# kehilangan penggunanya. Jadi hanya akun SSH di db/ssh.db yang dibuat ulang.
+restore_ssh_users(){ # $1 = folder hasil ekstrak sementara (berisi etc/shadow)
+  local sh="$1/etc/shadow" u exp ipl st hash uid made=0 upd=0 skip=0
+  RS_INFO=""
+  [[ -s "$sh" && -s $ASD/db/ssh.db ]] || return 0
+  while read -r u exp ipl st; do
+    [[ -z "$u" ]] && continue
+    hash=$(awk -F: -v u="$u" '$1==u{print $2; exit}' "$sh")
+    hash=${hash#!}                      # status lock diambil dari db, bukan dari tanda !
+    [[ -z "$hash" || "$hash" == "*" ]] && { skip=$((skip+1)); continue; }
+    if id "$u" >/dev/null 2>&1; then
+      uid=$(id -u "$u" 2>/dev/null)
+      if [[ -n "$uid" ]] && (( uid < 1000 )); then skip=$((skip+1)); continue; fi
+      usermod -e "$exp" -s /bin/false "$u" >/dev/null 2>&1; upd=$((upd+1))
+    else
+      useradd -e "$exp" -s /bin/false -M "$u" >/dev/null 2>&1 || { skip=$((skip+1)); continue; }
+      made=$((made+1))
+    fi
+    printf '%s:%s\n' "$u" "$hash" | chpasswd -e >/dev/null 2>&1
+    if [[ "$st" == active ]]; then usermod -U "$u" >/dev/null 2>&1
+    else usermod -L "$u" >/dev/null 2>&1; fi
+  done < $ASD/db/ssh.db
+  RS_INFO="$made baru, $upd diperbarui"
+  (( skip )) && RS_INFO="$RS_INFO, $skip dilewati"
+  return 0
+}
+
 # ---- proses restore satu file backup (ringkasan -> kode konfirmasi -> jalan) ----
 restore_do(){ # $1 = file zip
   local f="$1" code inp RD IP dip exp
@@ -328,7 +358,18 @@ restore_do(){ # $1 = file zip
   [[ "$inp" != "$code" ]] && { msg "${Y}Kode tidak sama, restore dibatalkan${N}"; return 1; }
 
   echo -e "\n${G}Mengembalikan data...${N}"
-  unzip -oq "$f" -d / || { msg "${R}Gagal extract backup${N}"; return 1; }
+  local tmpx=/tmp/cas-restore.$$
+  rm -rf "$tmpx"; mkdir -p "$tmpx"
+  # empat file milik OS tidak ditimpa (lihat restore_ssh_users)
+  # stderr ditahan: unzip mengeluh kalau pola -x tidak ada di zip (tidak masalah)
+  if ! unzip -oq "$f" -d / -x 'etc/passwd' 'etc/shadow' 'etc/group' 'etc/gshadow' 2>"$tmpx/unzip.err"; then
+    grep -v 'excluded filename not matched' "$tmpx/unzip.err" >&2 2>/dev/null
+    rm -rf "$tmpx"; msg "${R}Gagal extract backup${N}"; return 1
+  fi
+  unzip -oq "$f" -d "$tmpx" 'etc/shadow' >/dev/null 2>&1
+  restore_ssh_users "$tmpx"
+  rm -rf "$tmpx"
+  [[ -n "$RS_INFO" ]] && echo -e " ${G}Akun SSH dipulihkan : ${Y}$RS_INFO${N}"
 
   # Backup membawa ipinfo.json dari VPS asal, dan file itulah yang dipakai
   # untuk cek lisensi. Tanpa ditulis ulang, VPS ini ikut terkunci.
@@ -352,9 +393,14 @@ restore_do(){ # $1 = file zip
   # sekarang. Kalau pointing belum diarahkan ke VPS ini, cron menyelesaikan
   # sendiri tiap 10 menit sehingga buyer cukup mengubah A record saja.
   RD=$(cat $ASD/domain 2>/dev/null)
-  rm -f $ASD/ssl_try $ASD/ssl_last $ASD/ssl_wait $ASD/ssl_orange; : > $ASD/ssl_pending
-  echo -e " ${G}Menyiapkan SSL untuk ${Y}${RD:-"-"}${G}...${N}"
-  /usr/local/sbin/cas-ssl-pending >/dev/null 2>&1
+  rm -f $ASD/ssl_try $ASD/ssl_last $ASD/ssl_wait $ASD/ssl_orange
+  # backup dari VPS lain -> SSL harus diterbitkan ulang.
+  # Mundur versi di VPS yang sama + sertifikat masih lama -> tidak perlu.
+  if [[ "$RB_IP" != "$IP" ]] || ! openssl x509 -in $ASD/xray.crt -noout -checkend 604800 >/dev/null 2>&1; then
+    : > $ASD/ssl_pending
+    echo -e " ${G}Menyiapkan SSL untuk ${Y}${RD:-"-"}${G}...${N}"
+    /usr/local/sbin/cas-ssl-pending >/dev/null 2>&1
+  fi
 
   dip=$(getent hosts "$RD" 2>/dev/null | awk '{print $1}' | head -1)
   header "RESTORE SELESAI"
@@ -363,7 +409,7 @@ restore_do(){ # $1 = file zip
   printf " ${G}%-20s${N}: ${O}%s${N}\n" "Pointing sekarang"    "${dip:-"tidak resolve"}"
   echo -e "$LINE"
   if [[ -n "$RD" && "$dip" == "$IP" && ! -f $ASD/ssl_pending ]]; then
-    echo -e " ${G}Pointing sudah benar dan SSL sudah diperbarui.${N}"
+    echo -e " ${G}Pointing sudah benar dan sertifikat SSL sudah siap.${N}"
     echo -e " ${G}Tidak ada lagi yang perlu dilakukan. VPS siap dipakai.${N}"
   elif [[ -n "$RD" && "$dip" == "$IP" ]]; then
     echo -e " ${Y}Pointing sudah benar, tetapi SSL belum berhasil diterbitkan.${N}"

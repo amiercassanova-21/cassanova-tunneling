@@ -1,17 +1,15 @@
-v1.15.0
-- Backup kini juga menghasilkan LINK unduhan, seperti bot Potato:
-    Generating File Backup Successfully
-    Download your backup file
-    https://license.cassanova.my.id/b/xxxxxxxx
-    Link Expire : 1 Days
-- Bedanya dengan Potato: link disimpan di luar VPS, jadi TETAP BISA DIPAKAI
-  walaupun VPS lama sudah mati atau dihapus.
-- Pilihan mode kirim backup: File saja / Link saja / File + Link
-  (Setup Bot -> 7. Mode Kirim Backup), berlaku juga untuk auto backup.
-- Masa berlaku link bisa diatur 1 / 3 / 7 / 30 hari (default 1 hari).
-- Restore cukup tempel link: restore https://license.cassanova.my.id/b/xxxx
-  Nama file asli tetap dipertahankan saat diunduh.
-- Bot admin: kirim file .zip ke bot -> dibalas link unduhan siap tempel
-  (perintah /dl, atau tombol "Buat Link Backup" di menu utama).
-- Kalau link gagal dibuat (lisensi mati / server tak terjangkau), file backup
-  tetap dibuat dan tetap dikirim ke Telegram.
+v1.16.0
+- PENTING: restore sekarang aman lintas OS. Sebelumnya backup menimpa
+  /etc/passwd, /etc/shadow, /etc/group, /etc/gshadow milik sistem, sehingga
+  restore dari Debian ke Ubuntu (atau sebaliknya) bisa mematikan layanan
+  sistem seperti systemd-resolved, dan password root VPS baru ikut berubah.
+- Keempat file itu tidak lagi ditimpa. Yang dipulihkan hanya akun SSH yang
+  tercatat di database script: nama, password, masa aktif, dan status
+  lock-nya dibuat ulang di VPS baru.
+- Pengguna sistem (UID di bawah 1000) tidak akan pernah disentuh.
+- Password root VPS baru tetap milik Anda sendiri.
+- Restore kini melaporkan jumlah akun SSH yang dipulihkan.
+- Mundur versi di VPS yang sama tidak lagi menerbitkan sertifikat SSL baru
+  tanpa perlu (hemat kuota Let's Encrypt).
+- Perintah install di bot kini menyertakan apt-get update, supaya tetap jalan
+  di VPS yang cache apt-nya masih kosong.
