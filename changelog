@@ -1,11 +1,14 @@
-v1.18.0
-- Celah bypass lisensi ditutup. Dulu kalau server lisensi tidak bisa dihubungi,
-  status lama dipertahankan tanpa batas, sehingga memblokir domain lisensi sama
-  dengan pakai selamanya. Sekarang ada masa tenggang 3 hari: gangguan sesaat
-  tetap ditoleransi, tapi kalau gagal terus melewati batas, layanan dikunci.
-  Tahan terhadap jam VPS yang dimundurkan (memakai hitungan kegagalan juga).
-- Buyer kini diperingatkan sendiri lewat bot di VPS-nya saat masa aktif script
-  tinggal 7 hari, 3 hari, besok, dan hari-H. Dikirim sekali per ambang, dan
-  aktif lagi otomatis setelah diperpanjang.
-- Data lisensi kini dibackup otomatis ke Telegram admin setiap hari Senin,
-  lewat cron Worker yang sudah ada. Perintah /backup manual tetap ada.
+v1.19.0
+- Baru: VLESS REALITY di port 2087. Tidak butuh domain maupun SSL, dan jauh
+  lebih sulit dideteksi karena meniru handshake situs lain (default
+  www.microsoft.com). Setiap akun VLESS yang sudah ada otomatis dapat config
+  Reality, tanpa perlu membuat akun baru.
+- Config Reality ikut muncul di output akun, baik di terminal maupun Telegram,
+  sebagai kotak salin tersendiri.
+- Menu baru: FEATURES -> 13. Setelan VLESS Reality, untuk mengubah port,
+  mengubah domain kamuflase, atau membuat ulang kunci.
+- Menu baru: FEATURES -> 12. Cek Port VPS, menampilkan port mana saja yang
+  terbuka beserta layanannya. Bisa juga lewat perintah: cekport
+- Pengaman: config Reality hanya dipasang kalau lolos uji "xray run -test".
+  Kalau gagal, config lama dipertahankan sehingga protokol lain tidak
+  mungkin ikut mati karena Reality.

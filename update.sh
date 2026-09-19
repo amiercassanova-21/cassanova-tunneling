@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.18.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.19.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -286,8 +286,17 @@ st_label(){
   esac
 }
 
-mk_link(){ # net(ws|up|grpc) tls(1|0)  -> pakai variabel ID & REM
+mk_link(){ # net(ws|up|grpc|reality) tls(1|0)  -> pakai variabel ID & REM
   local port sec path t qs j tlsv
+  if [[ $1 == reality ]]; then
+    local rp rd rpub rsid
+    rp=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
+    rd=$(cat $ASD/reality_dest 2>/dev/null | tr -d '[:space:]')
+    rpub=$(cat $ASD/reality_pub 2>/dev/null | tr -d '[:space:]')
+    rsid=$(cat $ASD/reality_sid 2>/dev/null | tr -d '[:space:]')
+    echo "vless://$ID@$DOMAIN:$rp?encryption=none&security=reality&type=tcp&headerType=none&fp=chrome&sni=$rd&pbk=$rpub&sid=$rsid#$REM"
+    return
+  fi
   [[ $2 == 1 ]] && { port=443; sec=tls; tlsv=tls; } || { port=80; sec=none; tlsv=""; }
   case $1 in
     ws)   t=ws;          path=$WSPATH ;;
@@ -340,13 +349,16 @@ Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
 Expired On    : $exp"
     # tiap bagian dibungkus kotak sendiri supaya di Telegram bisa disalin satu per satu
     blk(){ printf '%s\n%s\n<code>%s</code>' "$BR" "$1" "$2"; }
+    local rbl=""
+    [[ $PROTO == vless && -s $ASD/reality_pub ]] && \
+      rbl=$'\n'"$(blk "🛡 <b>$UP REALITY</b>" "$(mk_link reality 1)")"
     local body="📋 <b>RINCIAN AKUN</b>
 <pre>$info</pre>
 $(blk "🔐 <b>$UP WS TLS</b>"          "$(mk_link ws 1)")
 $(blk "🔓 <b>$UP WS NON-TLS</b>"      "$(mk_link ws 0)")
 $(blk "⚡ <b>$UP GRPC</b>"                "$(mk_link grpc 1)")
 $(blk "🆙 <b>$UP UPGRADE TLS</b>"     "$(mk_link up 1)")
-$(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")
+$(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$rbl
 $BR
 🔎 <b>CEK MASA AKTIF</b>
 <code>https://$DOMAIN/cek</code>
@@ -381,6 +393,7 @@ $BR
   sec "$UP GRPC";            mk_link grpc 1
   sec "$UP Upgrade TLS";     mk_link up 1
   sec "$UP Upgrade NO TLS";  mk_link up 0
+  if [[ $PROTO == vless && -s $ASD/reality_pub ]]; then sec "$UP REALITY"; mk_link reality 1; fi
   sec "CEK MASA AKTIF"
   echo -e " ${C}https://$DOMAIN/cek${N}"
   echo
@@ -1123,6 +1136,94 @@ jq '
         .inbounds += [ $w | .tag=($p+"-up") | .port=(10021+$i)
                          | .streamSettings={network:"httpupgrade",httpupgradeSettings:{path:("/up"+$p)}} ] end)
   )' $CFG > $CFG.tmp && mv $CFG.tmp $CFG
+
+# =====================================================
+#  VLESS REALITY (TCP langsung, tanpa nginx & tanpa SSL)
+# =====================================================
+cat > /usr/local/sbin/cas-reality <<'EOF'
+#!/bin/bash
+# Kelola inbound VLESS Reality.
+#   cas-reality            -> pasang/segarkan inbound (tanpa restart)
+#   cas-reality --restart  -> pasang lalu restart xray
+#   cas-reality --keys     -> cetak port, dest, publicKey, shortId
+# Config baru hanya dipasang kalau lolos "xray run -test", jadi protokol lain
+# tidak mungkin ikut mati karena Reality.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ASD=/etc/autoscript
+CFG=/usr/local/etc/xray/config.json
+b64u(){ base64 -w0 | tr '+/' '-_' | tr -d '='; }
+
+port=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
+[[ "$port" =~ ^[0-9]+$ ]] && (( port > 0 && port < 65536 )) || port=2087
+dest=$(cat $ASD/reality_dest 2>/dev/null | tr -d '[:space:]')
+[[ "$dest" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || dest=www.microsoft.com
+echo "$port" > $ASD/reality_port; echo "$dest" > $ASD/reality_dest
+
+# kunci dibuat sekali saja dan tidak pernah diganti saat update
+if [[ ! -s $ASD/reality_priv || ! -s $ASD/reality_pub ]]; then
+  k=$(mktemp)
+  if openssl genpkey -algorithm X25519 -out "$k" 2>/dev/null; then
+    openssl pkey -in "$k" -outform DER        2>/dev/null | tail -c 32 | b64u > $ASD/reality_priv
+    openssl pkey -in "$k" -pubout -outform DER 2>/dev/null | tail -c 32 | b64u > $ASD/reality_pub
+  fi
+  rm -f "$k"
+fi
+priv=$(cat $ASD/reality_priv 2>/dev/null | tr -d '[:space:]')
+pub=$(cat $ASD/reality_pub 2>/dev/null | tr -d '[:space:]')
+sid=$(cat $ASD/reality_sid 2>/dev/null | tr -d '[:space:]')
+[[ "$sid" =~ ^[0-9a-f]{8}$ ]] || { sid=$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n'); echo "$sid" > $ASD/reality_sid; }
+
+if [[ ${#priv} -ne 43 || ${#pub} -ne 43 ]]; then
+  rm -f $ASD/reality_priv $ASD/reality_pub
+  echo "Kunci Reality gagal dibuat, Reality dilewati." >&2; exit 1
+fi
+[[ "$1" == "--keys" ]] && { printf 'port=%s\ndest=%s\npub=%s\nsid=%s\n' "$port" "$dest" "$pub" "$sid"; exit 0; }
+
+tmp=$(mktemp)
+jq --argjson port "$port" --arg dest "$dest" --arg priv "$priv" --arg sid "$sid" '
+  ([.inbounds[]|select(.tag=="vless-ws")][0].settings.clients // []) as $cl
+  | .inbounds = [ .inbounds[] | select(.tag != "vless-reality") ]
+  | .inbounds += [{
+      tag: "vless-reality",
+      listen: "0.0.0.0",
+      port: $port,
+      protocol: "vless",
+      settings: { clients: $cl, decryption: "none" },
+      streamSettings: {
+        network: "tcp",
+        security: "reality",
+        realitySettings: {
+          show: false,
+          dest: ($dest + ":443"),
+          xver: 0,
+          serverNames: [ $dest ],
+          privateKey: $priv,
+          shortIds: [ "", $sid ]
+        }
+      },
+      sniffing: { enabled: true, destOverride: ["http","tls"] }
+    }]' $CFG > "$tmp" 2>/dev/null
+
+if [[ ! -s "$tmp" ]] || ! jq -e . "$tmp" >/dev/null 2>&1; then
+  rm -f "$tmp"; echo "Gagal menyusun config Reality, tidak ada yang diubah." >&2; exit 1
+fi
+if ! xray run -test -config "$tmp" >/dev/null 2>&1; then
+  rm -f "$tmp"; echo "Config Reality tidak lolos uji Xray, tidak ada yang diubah." >&2; exit 1
+fi
+if cmp -s "$tmp" "$CFG"; then rm -f "$tmp"; exit 0; fi      # tidak ada perubahan
+cp -f "$CFG" "$CFG.bak-reality"
+mv "$tmp" "$CFG"
+if [[ "$1" == "--restart" ]]; then
+  systemctl restart xray >/dev/null 2>&1; sleep 1
+  if ! systemctl is-active --quiet xray; then
+    cp -f "$CFG.bak-reality" "$CFG"; systemctl restart xray >/dev/null 2>&1
+    echo "Xray gagal start dengan Reality, config sudah dikembalikan." >&2; exit 1
+  fi
+fi
+exit 0
+EOF
+chmod +x /usr/local/sbin/cas-reality
+/usr/local/sbin/cas-reality || echo -e "${RED}Reality dilewati (lihat pesan di atas), protokol lain tidak terpengaruh.${NC}"
 
 DOMAIN=$(cat /etc/autoscript/domain)
 cp -f /etc/nginx/conf.d/xray.conf /root/xray.conf.bak 2>/dev/null

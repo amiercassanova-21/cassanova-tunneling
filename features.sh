@@ -198,6 +198,13 @@ exec /usr/local/sbin/m-feature --restore "$1"
 EOF
 chmod +x /usr/local/sbin/restore
 
+# jalan pintas: ketik  cekport
+cat > /usr/local/sbin/cekport <<'EOF'
+#!/bin/bash
+exec /usr/local/sbin/m-feature --port
+EOF
+chmod +x /usr/local/sbin/cekport
+
 # daftar semua perintah cepat: ketik  cmd  (atau perintah)
 cat > /usr/local/sbin/cmd <<'EOF'
 #!/bin/bash
@@ -212,6 +219,7 @@ r "cmd"               "tampilkan daftar ini"
 r "updatesc"          "update script ke versi terbaru"
 r "renewsc"           "cek ulang lisensi setelah diperpanjang"
 r "adddomain"         "ganti / pasang domain baru"
+r "cekport"           "lihat port mana saja yang terbuka"
 echo -e "\n ${Y}BACKUP${N}"
 r "backup"            "buat backup baru (+ link & kirim ke Telegram)"
 r "restore"           "buka menu restore backup"
@@ -622,10 +630,101 @@ info_system(){
   echo -e "$LINE"; pause
 }
 
+cek_port(){
+  header "CEK PORT VPS"
+  local ports=(
+    "22|OpenSSH" "143|Dropbear" "109|Dropbear" "8088|SSH WebSocket"
+    "80|Nginx non-TLS" "8080|Nginx non-TLS" "2052|Nginx non-TLS" "8880|Nginx non-TLS"
+    "443|Nginx TLS" "8443|Nginx TLS" "2053|Nginx TLS"
+  )
+  local rp; rp=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
+  [[ "$rp" =~ ^[0-9]+$ ]] && ports+=("$rp|VLESS Reality")
+  local listen; listen=$(ss -Hltn 2>/dev/null | awk '{print $4}' | sed 's/.*://')
+  printf " ${G}%-6s %-18s %s${N}\n" "PORT" "LAYANAN" "STATUS"
+  echo -e "$LINE"
+  local e pt nm ok=0 bad=0
+  for e in "${ports[@]}"; do
+    pt=${e%%|*}; nm=${e#*|}
+    if grep -qx "$pt" <<< "$listen"; then
+      printf " %-6s %-18s ${G}terbuka${N}\n" "$pt" "$nm"; ok=$((ok+1))
+    else
+      printf " %-6s %-18s ${R}TIDAK jalan${N}\n" "$pt" "$nm"; bad=$((bad+1))
+    fi
+  done
+  echo -e "$LINE"
+  echo -e " ${G}Terbuka : ${Y}$ok${N}   ${G}Bermasalah : ${Y}$bad${N}"
+  echo -e "$LINE"
+  echo -e " ${Y}Port internal (hanya lokal, tidak dibuka ke internet):${N}"
+  local intl; intl=$(ss -Hltn 2>/dev/null | awk '$4 ~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | sed 's/.*://' | sort -un | tr '\n' ' ')
+  echo -e "  ${intl:-"-"}"
+  echo -e "$LINE"
+  echo -e " ${Y}Catatan:${N} pengecekan ini dari dalam VPS. Port yang tertulis"
+  echo -e " terbuka masih bisa tidak bisa diakses kalau diblokir firewall"
+  echo -e " penyedia VPS atau operator seluler pengguna."
+  echo -e "$LINE"
+  pause
+}
+
+set_reality(){
+  local o v cur
+  while true; do
+    header "SETELAN VLESS REALITY"
+    if [[ ! -s $ASD/reality_pub ]]; then
+      echo -e " ${R}Reality belum aktif di VPS ini.${N}"
+      echo -e " Jalankan ${G}updatesc${N} lebih dulu.\n"; pause; return
+    fi
+    echo -e " ${G}Port       : ${Y}$(cat $ASD/reality_port 2>/dev/null)${N}"
+    echo -e " ${G}Kamuflase  : ${Y}$(cat $ASD/reality_dest 2>/dev/null)${N}"
+    echo -e " ${G}PublicKey  : ${O}$(cat $ASD/reality_pub 2>/dev/null)${N}"
+    echo -e " ${G}ShortId    : ${O}$(cat $ASD/reality_sid 2>/dev/null)${N}"
+    echo -e " ${Y}(Reality tidak butuh domain maupun SSL)${N}\n"
+    echo -e " ${C}1.)${N} Ubah port"
+    echo -e " ${C}2.)${N} Ubah domain kamuflase (SNI)"
+    echo -e " ${C}3.)${N} Buat ulang kunci (semua config Reality lama jadi tidak berlaku)"
+    echo -e " ${C}4.)${N} Kembali\n"
+    read -rp "Pilih : " o
+    case $o in
+      1) read -rp "Port baru (1-65535) : " v
+         num_ok "$v" && (( v > 0 && v < 65536 )) || { msg "${R}Port tidak valid${N}"; continue; }
+         if ss -Hltn 2>/dev/null | awk '{print $4}' | sed 's/.*://' | grep -qx "$v"; then
+           if [[ "$v" != "$(cat $ASD/reality_port 2>/dev/null)" ]]; then
+             msg "${R}Port $v sudah dipakai layanan lain${N}"; continue
+           fi
+         fi
+         cur=$(cat $ASD/reality_port 2>/dev/null); echo "$v" > $ASD/reality_port
+         echo -e "\n${Y}Menerapkan (xray direstart, koneksi user terputus sebentar)...${N}"
+         if /usr/local/sbin/cas-reality --restart; then msg "${G}Port Reality: $v${N}"
+         else echo "$cur" > $ASD/reality_port; msg "${R}Gagal, dikembalikan ke $cur${N}"; fi ;;
+      2) echo -e "\n Contoh: www.microsoft.com, www.yahoo.co.jp, www.bing.com"
+         echo -e " ${Y}Harus situs yang mendukung TLS 1.3 + HTTP/2.${N}\n"
+         read -rp "Domain kamuflase : " v
+         [[ "$v" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || { msg "${R}Domain tidak valid${N}"; continue; }
+         echo -e "\n${Y}Menguji $v ...${N}"
+         if ! curl -s --max-time 10 -o /dev/null --tlsv1.3 "https://$v"; then
+           read -rp "$(echo -e " ${R}Tidak bisa dihubungi/TLS1.3 gagal. Tetap pakai? (y/t) : ${N}")" y
+           [[ "$y" != y ]] && continue
+         fi
+         cur=$(cat $ASD/reality_dest 2>/dev/null); echo "$v" > $ASD/reality_dest
+         echo -e "${Y}Menerapkan (xray direstart)...${N}"
+         if /usr/local/sbin/cas-reality --restart; then msg "${G}Kamuflase: $v${N}"
+         else echo "$cur" > $ASD/reality_dest; msg "${R}Gagal, dikembalikan ke $cur${N}"; fi ;;
+      3) read -rp "$(echo -e " ${R}Semua config Reality yang sudah dibagikan akan mati. Lanjut? (y/t) : ${N}")" y
+         [[ "$y" != y ]] && continue
+         rm -f $ASD/reality_priv $ASD/reality_pub $ASD/reality_sid
+         echo -e "\n${Y}Membuat kunci baru & menerapkan...${N}"
+         if /usr/local/sbin/cas-reality --restart; then msg "${G}Kunci Reality dibuat ulang${N}"
+         else msg "${R}Gagal membuat kunci${N}"; fi ;;
+      *) return ;;
+    esac
+  done
+}
+
 coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
 
 # mode non-interaktif: adddomain
 if [[ "$1" == "--domain" ]]; then change_domain; exit 0; fi
+if [[ "$1" == "--port" ]]; then cek_port; exit 0; fi
+if [[ "$1" == "--reality" ]]; then set_reality; exit 0; fi
 if [[ "$1" == "--restore" ]]; then if [[ -n "$2" ]]; then restore_url "$2"; else restore_vps; fi; exit 0; fi
 
 while true; do
@@ -643,11 +742,13 @@ while true; do
   echo -e " ${C}9.)${N}  Security SYN & Optimasi"
   echo -e " ${C}10.)${N} Change Domain VPS"
   echo -e " ${C}11.)${N} Information System"
-  echo -e " ${C}12.)${N} Auto Update"
-  echo -e " ${C}13.)${N} Back to Menu"
+  echo -e " ${C}12.)${N} Cek Port VPS"
+  echo -e " ${C}13.)${N} Setelan VLESS Reality"
+  echo -e " ${C}14.)${N} Auto Update"
+  echo -e " ${C}15.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
-  read -rp "$(echo -e "${G}Select From Options [1-13 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-15 or x] : ${N}")" opt
   case $opt in
     1) check_bandwidth ;;
     2) set_reboot ;;
@@ -660,8 +761,10 @@ while true; do
     9) security_syn ;;
     10) change_domain ;;
     11) info_system ;;
-    12) cas-update; exit 0 ;;
-    13) exit 0 ;;
+    12) cek_port ;;
+    13) set_reality ;;
+    14) cas-update; exit 0 ;;
+    15) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
