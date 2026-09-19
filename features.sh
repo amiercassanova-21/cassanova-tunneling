@@ -304,7 +304,7 @@ restore_vps(){
 
 start_stop(){
   header "START / STOP SERVICE"
-  local svc=(xray nginx cas-dropbear ws-ssh badvpn)
+  local svc=(xray nginx cas-dropbear ws-ssh badvpn cek-akun)
   local i=1 s
   for s in "${svc[@]}"; do
     printf " ${C}%s.)${N} %-10s [%b]\n" "$i" "$s" "$(systemctl is-active --quiet $s && echo "${G}ON${N}" || echo "${R}OFF${N}")"
@@ -405,6 +405,7 @@ info_system(){
   local IP; IP=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
   printf " ${G}%-14s${N}: %s\n" "Script" "$SCNAME" "Brand" "$(brand_txt)" "Version" "$VER" "OS" "$(. /etc/os-release; echo $PRETTY_NAME)" \
     "Kernel" "$(uname -r)" "Domain" "$DOMAIN" "IP" "$IP" \
+    "Cek Akun" "https://$DOMAIN/cek" \
     "CPU" "$(nproc) core" "RAM" "$(free -m|awk '/Mem:/{print $2"M"}')" \
     "Uptime" "$(uptime -p|sed 's/up //')" "BBR" "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
   echo -e "$LINE"
@@ -510,5 +511,259 @@ while true; do
 done
 EOF
 chmod +x /usr/local/sbin/m-brand
+
+
+# =====================================================
+#  HALAMAN CEK AKUN PELANGGAN (read-only, port lokal 8099)
+# =====================================================
+echo -e "${GRN}[FEAT] Halaman cek akun pelanggan...${NC}"
+cat > /usr/local/sbin/cekakun.py <<'CEKAKUNPY_EOF'
+#!/usr/bin/env python3
+# Cassanova Tunneling - Halaman Cek Akun Pelanggan (read-only)
+# Kunci cek: UUID/password (Xray) atau username (SSH). Tidak pernah menulis data.
+import json, os, re, time, html
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
+from collections import defaultdict
+
+ASD = os.environ.get("CAS_ASD", "/etc/autoscript")
+PROTOS = ("vless", "vmess", "trojan")
+LIMIT_N, LIMIT_WIN = 15, 60          # 15 permintaan / 60 detik per IP
+_hits = defaultdict(list)
+
+def rate_ok(ip):
+    now = time.time()
+    q = _hits[ip] = [t for t in _hits[ip] if now - t < LIMIT_WIN]
+    if len(q) >= LIMIT_N:
+        return False
+    q.append(now)
+    return True
+
+def rd(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except Exception:
+        return default
+
+def hbytes(n):
+    n = float(n)
+    for u in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or u == "TB":
+            return f"{n:.2f} {u}" if u != "B" else f"{int(n)} B"
+        n /= 1024
+
+def days_left(exp):
+    try:
+        y, m, d = (int(x) for x in exp.split("-"))
+        import datetime
+        return (datetime.date(y, m, d) - datetime.date.today()).days
+    except Exception:
+        return None
+
+def usage_of(proto, user):
+    try:
+        return int(rd(f"{ASD}/usage/{proto}/{user}", "0") or 0)
+    except Exception:
+        return 0
+
+def find_xray(key):
+    """Cari akun Xray berdasarkan UUID / password (kolom ke-3)."""
+    key = key.strip()
+    for p in PROTOS:
+        try:
+            with open(f"{ASD}/db/{p}.db") as f:
+                for line in f:
+                    c = line.split()
+                    if len(c) >= 6 and c[2] == key:
+                        return {
+                            "proto": p.upper(), "user": c[0], "exp": c[1],
+                            "iplimit": c[3], "quota_gb": c[4], "status": c[5],
+                            "used": usage_of(p, c[0]),
+                        }
+        except FileNotFoundError:
+            continue
+    return None
+
+def find_ssh(user):
+    """Cari akun SSH berdasarkan username (data minimal)."""
+    user = user.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", user or ""):
+        return None
+    try:
+        with open(f"{ASD}/db/ssh.db") as f:
+            for line in f:
+                c = line.split()
+                if len(c) >= 4 and c[0] == user:
+                    return {"proto": "SSH", "user": c[0], "exp": c[1],
+                            "iplimit": c[2], "quota_gb": "0", "status": c[3],
+                            "used": usage_of("ssh", c[0])}
+    except FileNotFoundError:
+        return None
+    return None
+
+def build(acc):
+    dl = days_left(acc["exp"])
+    q = acc.get("quota_gb", "0")
+    try:
+        qn = int(q)
+    except Exception:
+        qn = 0
+    out = {
+        "found": True,
+        "proto": acc["proto"],
+        "user": acc["user"],
+        "exp": acc["exp"],
+        "days_left": dl,
+        "status": acc["status"],
+        "iplimit": acc["iplimit"] if acc["iplimit"] not in ("0", "") else "Unlimited",
+        "used": hbytes(acc["used"]),
+        "quota": "Unlimited" if qn == 0 else f"{qn} GB",
+    }
+    if qn > 0:
+        pct = min(100, round(acc["used"] / (qn * 1073741824) * 100, 1))
+        out["quota_pct"] = pct
+    return out
+
+PAGE = """<!DOCTYPE html><html lang="id"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cek Akun - __BRAND__</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#0f1420;color:#e8edf7;
+min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.card{width:100%;max-width:440px;background:#161d2e;border:1px solid #243049;border-radius:16px;
+padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+h1{font-size:18px;text-align:center;letter-spacing:.5px;margin-bottom:4px;color:#7dd3fc}
+.sub{text-align:center;font-size:12px;color:#8b98b0;margin-bottom:20px}
+label{display:block;font-size:12px;color:#8b98b0;margin:14px 0 6px}
+select,input{width:100%;padding:12px 14px;background:#0f1420;border:1px solid #2a3654;
+border-radius:10px;color:#e8edf7;font-size:14px;outline:none}
+select:focus,input:focus{border-color:#3b82f6}
+button{width:100%;margin-top:18px;padding:13px;background:#2563eb;border:0;border-radius:10px;
+color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+button:active{background:#1d4ed8}
+button:disabled{opacity:.6}
+.res{margin-top:20px;display:none}
+.row{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid #223049;font-size:14px}
+.row:last-child{border-bottom:0}
+.k{color:#8b98b0}
+.v{font-weight:600;text-align:right}
+.badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600}
+.ok{background:#064e3b;color:#6ee7b7}.bad{background:#4c1d24;color:#fca5a5}.warn{background:#4a3a09;color:#fcd34d}
+.bar{height:7px;background:#223049;border-radius:99px;overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;background:#3b82f6}
+.err{margin-top:18px;padding:12px;background:#4c1d24;color:#fca5a5;border-radius:10px;font-size:13px;display:none}
+.foot{margin-top:18px;text-align:center;font-size:11px;color:#5c6880}
+</style></head><body>
+<div class="card">
+<h1>__BRAND__</h1>
+<div class="sub">Cek Masa Aktif Akun</div>
+<label>Jenis Akun</label>
+<select id="t" onchange="lbl()">
+<option value="xray">VLESS / VMESS / TROJAN</option>
+<option value="ssh">SSH / OpenVPN</option>
+</select>
+<label id="l">UUID atau Password akun</label>
+<input id="k" placeholder="Tempel UUID / password di sini" autocomplete="off">
+<button id="b" onclick="go()">CEK AKUN</button>
+<div class="err" id="e"></div>
+<div class="res" id="r"></div>
+<div class="foot">Powered by Cassanova Tunneling</div>
+</div>
+<script>
+function lbl(){document.getElementById('l').textContent=
+ document.getElementById('t').value==='ssh'?'Username SSH':'UUID atau Password akun';
+ document.getElementById('k').placeholder=
+ document.getElementById('t').value==='ssh'?'Ketik username':'Tempel UUID / password di sini';}
+function esc(s){return String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}
+async function go(){
+ var k=document.getElementById('k').value.trim(),t=document.getElementById('t').value;
+ var e=document.getElementById('e'),r=document.getElementById('r'),b=document.getElementById('b');
+ e.style.display='none';r.style.display='none';
+ if(!k){e.textContent='Isi dulu kolomnya.';e.style.display='block';return}
+ b.disabled=true;b.textContent='MENGECEK...';
+ try{
+  var q=await fetch('/cek/api?t='+encodeURIComponent(t)+'&k='+encodeURIComponent(k));
+  var d=await q.json();
+  if(!d.found){e.textContent=d.error||'Akun tidak ditemukan. Periksa lagi UUID/username Anda.';e.style.display='block'}
+  else{
+   var st=d.status==='on'?'<span class="badge ok">AKTIF</span>':
+        (d.status==='lock'?'<span class="badge warn">TERKUNCI</span>':'<span class="badge bad">'+esc(d.status).toUpperCase()+'</span>');
+   var dl=d.days_left;
+   var sisa=dl===null?'-':(dl<0?'<span class="badge bad">EXPIRED</span>':(dl===0?'<span class="badge warn">habis hari ini</span>':dl+' hari lagi'));
+   var h='<div class="row"><span class="k">Username</span><span class="v">'+esc(d.user)+'</span></div>'
+    +'<div class="row"><span class="k">Protokol</span><span class="v">'+esc(d.proto)+'</span></div>'
+    +'<div class="row"><span class="k">Status</span><span class="v">'+st+'</span></div>'
+    +'<div class="row"><span class="k">Masa Aktif</span><span class="v">'+esc(d.exp)+'</span></div>'
+    +'<div class="row"><span class="k">Sisa</span><span class="v">'+sisa+'</span></div>'
+    +'<div class="row"><span class="k">Limit IP</span><span class="v">'+esc(d.iplimit)+'</span></div>'
+    +'<div class="row"><span class="k">Kuota</span><span class="v">'+esc(d.used)+' / '+esc(d.quota)+'</span></div>';
+   if(d.quota_pct!==undefined)h+='<div class="bar"><i style="width:'+d.quota_pct+'%"></i></div>';
+   r.innerHTML=h;r.style.display='block';
+  }
+ }catch(x){e.textContent='Gagal menghubungi server. Coba lagi.';e.style.display='block'}
+ b.disabled=false;b.textContent='CEK AKUN';
+}
+document.getElementById('k').addEventListener('keydown',function(ev){if(ev.key==='Enter')go()});
+</script></body></html>"""
+
+class H(BaseHTTPRequestHandler):
+    def _send(self, code, body, ctype):
+        b = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(b)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        self.wfile.write(b)
+
+    def do_GET(self):
+        u = urlparse(self.path)
+        path = u.path.rstrip("/")
+        if path.endswith("/api"):
+            ip = self.headers.get("X-Real-IP") or self.client_address[0]
+            if not rate_ok(ip):
+                return self._send(429, json.dumps({"found": False,
+                    "error": "Terlalu sering mengecek. Tunggu 1 menit."}), "application/json")
+            q = parse_qs(u.query)
+            key = (q.get("k", [""])[0] or "").strip()
+            typ = (q.get("t", ["xray"])[0] or "xray").strip()
+            if not key or len(key) > 80:
+                return self._send(200, json.dumps({"found": False,
+                    "error": "Data tidak valid."}), "application/json")
+            acc = find_ssh(key) if typ == "ssh" else find_xray(key)
+            if not acc:
+                return self._send(200, json.dumps({"found": False,
+                    "error": "Akun tidak ditemukan."}), "application/json")
+            return self._send(200, json.dumps(build(acc)), "application/json")
+        brand = rd(f"{ASD}/brand", "CASSANOVA") or "CASSANOVA"
+        page = PAGE.replace("__BRAND__", html.escape(brand.upper()))
+        self._send(200, page, "text/html; charset=utf-8")
+
+    def log_message(self, *a):
+        pass
+
+if __name__ == "__main__":
+    HTTPServer(("127.0.0.1", 8099), H).serve_forever()
+CEKAKUNPY_EOF
+chmod +x /usr/local/sbin/cekakun.py
+
+cat > /etc/systemd/system/cek-akun.service <<'CEKSVC_EOF'
+[Unit]
+Description=Cassanova Cek Akun Pelanggan
+After=network.target
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/sbin/cekakun.py
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target
+CEKSVC_EOF
+systemctl daemon-reload
+systemctl enable cek-akun >/dev/null 2>&1
+systemctl restart cek-akun >/dev/null 2>&1
 
 echo -e "${GRN}Modul Features & Brand Name selesai.${NC}"

@@ -1,3 +1,9 @@
-v1.9.9
-- Perbaikan perintah adddomain (sebelumnya error "m-features: No such file or directory")
-- Shortcut adddomain/addomain kini memanggil m-feature yang benar
+v1.10.0
+- BARU: Halaman Cek Akun Pelanggan di https://<domain>/cek
+  * Pelanggan cek sendiri masa aktif, sisa hari, kuota terpakai, limit IP
+  * Xray (VLESS/VMESS/TROJAN) dicek pakai UUID/password -> aman dari tebak-tebakan nama
+  * SSH dicek pakai username (data minimal)
+  * Tampilan responsive untuk HP, brand mengikuti Set Brand Name
+  * Batas 15 permintaan/menit per IP, layanan read-only (tidak bisa mengubah data)
+- Link halaman tampil di menu Information System
+- Service cek-akun bisa dimatikan lewat menu Start/Stop Service

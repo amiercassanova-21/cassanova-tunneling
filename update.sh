@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-#  CASSANOVA TUNNELING - UPDATE v1.9.9
+#  CASSANOVA TUNNELING - UPDATE v1.10.0
 #  - Tambah/hapus akun tanpa restart Xray (Xray API)
 #  - Check Users Login, Lock/Unlock, Recovery
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
@@ -979,6 +979,14 @@ server {
     location ^~ /vless-grpc  { grpc_pass grpc://127.0.0.1:10011; grpc_set_header X-Real-IP $remote_addr; grpc_read_timeout 3600s; grpc_send_timeout 3600s; client_max_body_size 0; }
     location ^~ /vmess-grpc  { grpc_pass grpc://127.0.0.1:10012; grpc_set_header X-Real-IP $remote_addr; grpc_read_timeout 3600s; grpc_send_timeout 3600s; client_max_body_size 0; }
     location ^~ /trojan-grpc { grpc_pass grpc://127.0.0.1:10013; grpc_set_header X-Real-IP $remote_addr; grpc_read_timeout 3600s; grpc_send_timeout 3600s; client_max_body_size 0; }
+
+    # Halaman cek akun pelanggan (read-only, service lokal 8099)
+    location ^~ /cek {
+        proxy_pass http://127.0.0.1:8099;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 20s;
+    }
 }
 NGX
 sed -i "s/DOMAIN_HERE/$DOMAIN/" /etc/nginx/conf.d/xray.conf
@@ -1029,7 +1037,7 @@ chmod 644 /etc/cron.d/autoscript
 #  SELESAI
 # =====================================================
 echo -e "${GRN}[7/7] Menyelesaikan...${NC}"
-echo "v1.9.9" > /etc/autoscript/version
+echo "v1.10.0" > /etc/autoscript/version
 grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu info' >> /root/.profile
 /usr/local/sbin/menu license >/dev/null 2>&1 || true
 
