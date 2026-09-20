@@ -227,6 +227,7 @@ r "restore <link>"    "restore langsung dari link, tanpa upload"
 echo -e "\n ${Y}AKUN XRAY (vless / vmess / trojan)${N}"
 r "addall"            "buat 1 akun untuk SEMUA protokol sekaligus"
 r "trialall"          "buat akun TRIAL untuk semua protokol (hapus sendiri)"
+r "deltrial"          "hapus SEMUA akun trial sekaligus"
 r "addvless"          "buat akun VLESS baru"
 r "renewvless <kode>" "perpanjang akun (kuota ikut direset)"
 r "delvless <kode>"   "hapus akun (masuk daftar recovery)"
@@ -782,22 +783,24 @@ while true; do
   echo -e " ${C}3.)${N}  Reboot VPS"
   echo -e " ${C}4.)${N}  Speed VPS"
   echo -e " ${C}5.)${N}  Check All Service"
+  bar "AKUN SEMUA PROTOKOL"
+  echo -e " ${C}6.)${N}  All Protocol"
   bar "BACKUP & RESTORE"
-  echo -e " ${C}6.)${N}  Backup Configuration VPS"
-  echo -e " ${C}7.)${N}  Restore Configuration VPS"
+  echo -e " ${C}7.)${N}  Backup Configuration VPS"
+  echo -e " ${C}8.)${N}  Restore Configuration VPS"
   bar "SYSTEM"
-  echo -e " ${C}8.)${N}  Start/Stop Service"
-  echo -e " ${C}9.)${N}  Security SYN & Optimasi"
-  echo -e " ${C}10.)${N} Change Domain VPS"
-  echo -e " ${C}11.)${N} Information System"
-  echo -e " ${C}12.)${N} Cek Port VPS"
-  echo -e " ${C}13.)${N} Setelan VLESS Reality"
-  echo -e " ${C}14.)${N} Auto Update"
-  echo -e " ${C}15.)${N} Back to Menu"
+  echo -e " ${C}9.)${N}  Start/Stop Service"
+  echo -e " ${C}10.)${N} Security SYN & Optimasi"
+  echo -e " ${C}11.)${N} Change Domain VPS"
+  echo -e " ${C}12.)${N} Information System"
+  echo -e " ${C}13.)${N} Cek Port VPS"
+  echo -e " ${C}14.)${N} Setelan VLESS Reality"
+  echo -e " ${C}15.)${N} Auto Update"
+  echo -e " ${C}16.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-15 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-16 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "check_bandwidth" ;;
@@ -805,16 +808,19 @@ while true; do
     3) cas_run "reboot_now" ;;
     4) cas_run "speed_vps" ;;
     5) cas_run "running" ;;
-    6) cas_run "backup_vps" ;;
-    7) cas_run "restore_vps" ;;
-    8) cas_run "start_stop" ;;
-    9) cas_run "security_syn" ;;
-    10) cas_run "change_domain" ;;
-    11) cas_run "info_system" ;;
-    12) cas_run "cek_port" ;;
-    13) cas_run "set_reality" ;;
-    14) cas-update; exit 0 ;;
-    15) exit 0 ;;
+    # m-all punya menu & penanganan Ctrl-C sendiri, jadi dipanggil langsung
+    # (kalau dibungkus cas_run, pembungkusnya keluar duluan saat Ctrl-C).
+    6) m-all; [[ $? == 97 ]] && { clear; kill -TERM $PPID 2>/dev/null; exit 0; } ;;
+    7) cas_run "backup_vps" ;;
+    8) cas_run "restore_vps" ;;
+    9) cas_run "start_stop" ;;
+    10) cas_run "security_syn" ;;
+    11) cas_run "change_domain" ;;
+    12) cas_run "info_system" ;;
+    13) cas_run "cek_port" ;;
+    14) cas_run "set_reality" ;;
+    15) cas-update; exit 0 ;;
+    16) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac

@@ -1,9 +1,21 @@
-v1.23.1
-- TRIAL ALL PROTOCOL: limit IP sekarang bisa dipilih, tidak lagi dipaksa 1.
-  Bawaannya 0 = unlimited, supaya akun trial yang disebar ke grup bisa
-  dipakai banyak orang sekaligus. Isi angka kalau trialnya untuk 1 orang
-  (contoh 3 untuk 3 perangkat).
-- Dengan limit 0, pengunci otomatis (xray-guard & ssh-guard) melewati akun
-  itu, jadi akun trial tidak akan terkunci sendiri walau dipakai ramai.
-- Menu CREATE ALL PROTOCOL (pilihan 0) tidak berubah sama sekali,
-  bawaannya tetap 2 IP.
+v1.24.0
+- CREATE ALL PROTOCOL dan TRIAL ALL PROTOCOL disatukan jadi satu menu
+  "All Protocol", dan dipindah dari menu utama ke menu FEATURES nomor 6
+  (tepat di atas BACKUP & RESTORE).
+- Isi menu All Protocol: Create Account, Trial Account, Hapus Semua Akun
+  Trial, Back to Features.
+- Akibat pemindahan ini: menu FEATURES bergeser satu nomor mulai dari
+  Backup (jadi 7), Restore (8), sampai Back to Menu (jadi 16).
+  Menu utama kembali bersih: pilihan 1-9 dan x.
+- Baru: Hapus Semua Akun Trial. Sekali konfirmasi, semua akun trial di
+  SSH, VLESS, VMESS, dan TROJAN dihapus sekaligus, tidak perlu masuk ke
+  tiap protokol satu-satu. Akun berbayar tidak ikut tersentuh.
+  Jadwal hapus otomatis yang sudah tidak terpakai ikut dibersihkan.
+- Perintah cepat baru: deltrial (sama dengan menu Hapus Semua Akun Trial).
+  addall dan trialall tetap seperti biasa.
+- Ditegaskan & diuji ulang: akun trial tidak pernah masuk daftar Recovery,
+  baik saat dihapus manual, saat habis waktunya, maupun lewat Hapus Semua
+  Akun Trial.
+- Ditegaskan & diuji ulang: isi Recovery yang sudah lebih dari 4 bulan
+  (120 hari) dibuang otomatis setiap hari, untuk SSH maupun Xray, supaya
+  daftarnya tidak menumpuk.

@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.23.1"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.24.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -1068,19 +1068,15 @@ while true; do
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "3.)" "VLESS" "8.)" "SET BRAND NAME"
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "4.)" "TROJAN" "9.)" "CHECK SERVICES"
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "5.)" "SETUP BOT" "x.)" "EXIT"
-  printf "${B}│${N} ${C}%-4s${N} ${Y}%-35s${N}\n" "0.)" "CREATE ALL PROTOCOL"
-  printf "${B}│${N} ${C}%-4s${N} ${Y}%-35s${N}\n" "t.)" "TRIAL ALL PROTOCOL"
   bot
   echo
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [0-9, t, x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-9 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     # Modul di bawah ini menangani Ctrl-C sendiri (kembali ke menunya masing-
     # masing), jadi dipanggil langsung. Kalau dibungkus subshell, pembungkusnya
     # keluar duluan saat Ctrl-C padahal modulnya masih hidup -> layar bertumpuk.
-    0) m-all ;;
-    t|T) m-all --trial ;;
     1) m-ssh ;;
     2) m-xray vmess ;;
     3) m-xray vless ;;
@@ -1143,6 +1139,89 @@ tg(){ # kirim satu pesan, berurutan (bukan latar belakang) agar urutannya benar
     --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=$1" \
     "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
 }
+
+# -----------------------------------------------------------------------
+# Tanpa argumen = tampilkan menu. Tiap pilihan menjalankan ulang script ini
+# dengan argumennya sendiri, jadi badan pembuat akun di bawah tidak berubah.
+# -----------------------------------------------------------------------
+if [[ -z "$1" ]]; then
+  cas_run(){ ( trap 'exit 130' INT; "$@" ); }   # Ctrl-C = kembali ke menu ini
+  while true; do
+    header "ALL PROTOCOL"
+    echo -e "\n ${Y}Satu akun untuk SSH + VLESS + VMESS + TROJAN${N}\n"
+    echo -e " ${C}1.)${N}  Create Account"
+    echo -e " ${C}2.)${N}  Trial Account"
+    echo -e " ${C}3.)${N}  Hapus Semua Akun Trial"
+    echo -e " ${C}4.)${N}  Back to Features"
+    echo -e " ${C}x.)${N}  Exit"
+    echo -e "$LINE\n"
+    trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
+    read -rp "$(echo -e "${G}Select From Options [1-4 or x] : ${N}")" _o
+    trap ':' INT
+    case $_o in
+      1) cas_run "$0" --create ;;
+      2) cas_run "$0" --trial ;;
+      3) cas_run "$0" --deltrial ;;
+      4) exit 0 ;;
+      # 97 = minta menu pemanggil ikut keluar sampai ke shell
+      x|X) clear; exit 97 ;;
+      *) echo -e "${R}Pilihan salah${N}"; sleep 1 ;;
+    esac
+  done
+fi
+
+# -----------------------------------------------------------------------
+# Hapus semua akun trial sekaligus (tidak perlu satu-satu tiap protokol)
+# -----------------------------------------------------------------------
+if [[ "$1" == --deltrial ]]; then
+  header "HAPUS SEMUA AKUN TRIAL"
+  rows=""; users=""
+  for _p in ssh vless vmess trojan; do
+    while read -r _u _; do
+      [[ -z "$_u" || "$_u" != *trial* ]] && continue
+      rows+="$_p $_u"$'\n'
+      grep -qx "$_u" <<< "$users" || users+="$_u"$'\n'
+    done < <(cat $ASD/db/$_p.db 2>/dev/null)
+  done
+  users=$(grep -c . <<< "$users"); [[ "$users" =~ ^[0-9]+$ ]] || users=0
+  nrow=$(grep -c . <<< "$rows"); [[ "$nrow" =~ ^[0-9]+$ ]] || nrow=0
+  if (( nrow == 0 )); then
+    echo -e "\n ${Y}Tidak ada akun trial yang aktif.${N}\n"
+    read -rp "Tekan Enter..."; exit 0
+  fi
+  echo -e "\n ${Y}Akun trial yang masih aktif:${N}\n"
+  # satu baris per username, protokolnya digabung agar mudah dibaca
+  awk 'NF{ if(!( $2 in seen )){ order[++n]=$2; seen[$2]="" }
+           seen[$2]=seen[$2] toupper($1) " " }
+       END{ for(i=1;i<=n;i++) printf "  %-14s %s\n", order[i], seen[order[i]] }' <<< "$rows"
+  echo -e "\n ${Y}$users akun trial ($nrow entri protokol)${N}\n"
+  read -rp "$(echo -e "Hapus semua akun trial ini? (y/t) : ")" _y
+  [[ "$_y" == y || "$_y" == Y ]] || { echo -e "\n ${Y}Dibatalkan, tidak ada yang dihapus.${N}\n"; read -rp "Tekan Enter..."; exit 0; }
+  trap '' INT          # selama menghapus, Ctrl-C ditahan agar tidak setengah jadi
+  echo
+  _done=0
+  while read -r _p _u; do
+    [[ -z "$_u" ]] && continue
+    if [[ "$_p" == ssh ]]; then /usr/local/sbin/m-ssh ssh --delete "$_u" >/dev/null 2>&1
+    else /usr/local/sbin/m-xray "$_p" --delete "$_u" >/dev/null 2>&1; fi
+    echo -e " ${G}terhapus${N} : ${_p^^} $_u"
+    _done=$((_done+1))
+  done <<< "$rows"
+  # buang jadwal hapus otomatis yang sudah tidak ada gunanya
+  if command -v atq >/dev/null 2>&1; then
+    for _j in $(atq 2>/dev/null | awk '{print $1}'); do
+      _c=$(at -c "$_j" 2>/dev/null | grep -- '--delete' | tail -1)
+      for _u in $(awk 'NF{print $2}' <<< "$rows" | sort -u); do
+        [[ "$_c" == *"--delete $_u"* ]] && { atrm "$_j" 2>/dev/null; break; }
+      done
+    done
+  fi
+  trap - INT
+  echo -e "\n ${G}Selesai. $_done entri trial dihapus.${N}"
+  echo -e " ${Y}Akun trial tidak masuk daftar Recovery.${N}\n"
+  read -rp "$(echo -e "${P}Press Enter for Back to Menu${N}")"
+  exit 0
+fi
 
 # Mode trial: "m-all --trial". Username dibuat sendiri, masa aktif dalam menit,
 # dan tiap protokol menjadwalkan hapus otomatis (lewat "at") begitu waktu habis.
@@ -1315,13 +1394,17 @@ EOF
 chmod +x /usr/local/sbin/m-all
 cat > /usr/local/sbin/addall <<'EOF'
 #!/bin/bash
-exec /usr/local/sbin/m-all
+exec /usr/local/sbin/m-all --create
 EOF
 cat > /usr/local/sbin/trialall <<'EOF'
 #!/bin/bash
 exec /usr/local/sbin/m-all --trial
 EOF
-chmod +x /usr/local/sbin/addall /usr/local/sbin/trialall
+cat > /usr/local/sbin/deltrial <<'EOF'
+#!/bin/bash
+exec /usr/local/sbin/m-all --deltrial
+EOF
+chmod +x /usr/local/sbin/addall /usr/local/sbin/trialall /usr/local/sbin/deltrial
 
 cat > /usr/local/sbin/renewsc <<'RSC'
 #!/bin/bash
