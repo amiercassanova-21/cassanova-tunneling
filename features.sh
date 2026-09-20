@@ -239,6 +239,103 @@ echo -e " Bisa juga dipisah spasi, contoh: ${C}renew vmess budi${N}"
 echo -e "$L"
 EOF
 chmod +x /usr/local/sbin/cmd
+
+# =====================================================
+#  ABUSE GUARD - blok port keluar yang sering dipakai
+#  untuk spam/scan, penyebab VPS kena suspend provider
+# =====================================================
+cat > /usr/local/sbin/cas-abuse <<'EOF'
+#!/bin/bash
+# cas-abuse --on basic|full   pasang aturan
+# cas-abuse --off             lepas aturan
+# cas-abuse --status          tampilkan aturan yang aktif
+# cas-abuse --heal            pasang ulang kalau hilang (dipanggil cron & saat boot)
+ASD=/etc/autoscript
+STATE=$ASD/abuse_guard
+CHAIN=CAS-ABUSE
+# 25 = SMTP (spam), 139/445 = SMB (worm & scan). Sengaja TIDAK memblok 465/587
+# karena itu port kirim email yang dipakai aplikasi email pelanggan.
+P_BASIC="25 139 445"
+P_FULL="25 139 445 3389 5900"
+
+ports(){ case "$1" in full) echo "$P_FULL" ;; basic) echo "$P_BASIC" ;; *) echo "" ;; esac; }
+
+pasang(){ # $1 = ipt/ip6t  $2 = daftar port
+  local I=$1 p
+  command -v $I >/dev/null 2>&1 || return 0
+  $I -t filter -N $CHAIN 2>/dev/null
+  $I -t filter -F $CHAIN 2>/dev/null
+  # jangan ganggu lalu lintas lokal
+  $I -t filter -A $CHAIN -o lo -j RETURN 2>/dev/null
+  for p in $2; do
+    $I -t filter -A $CHAIN -p tcp --dport $p -j REJECT 2>/dev/null
+  done
+  $I -t filter -C OUTPUT -j $CHAIN 2>/dev/null || $I -t filter -I OUTPUT 1 -j $CHAIN 2>/dev/null
+}
+
+lepas(){ # $1 = ipt/ip6t
+  local I=$1
+  command -v $I >/dev/null 2>&1 || return 0
+  while $I -t filter -C OUTPUT -j $CHAIN 2>/dev/null; do $I -t filter -D OUTPUT -j $CHAIN 2>/dev/null || break; done
+  $I -t filter -F $CHAIN 2>/dev/null
+  $I -t filter -X $CHAIN 2>/dev/null
+}
+
+case "$1" in
+  --on)
+    mode=${2:-basic}; [[ "$mode" =~ ^(basic|full)$ ]] || mode=basic
+    pasang iptables  "$(ports $mode)"
+    pasang ip6tables "$(ports $mode)"
+    echo "$mode" > $STATE
+    ;;
+  --off)
+    lepas iptables; lepas ip6tables
+    echo off > $STATE
+    ;;
+  --heal)
+    mode=$(cat $STATE 2>/dev/null)
+    [[ "$mode" =~ ^(basic|full)$ ]] || exit 0
+    # hanya pasang ulang kalau rantainya memang hilang (murah, sekali cek)
+    iptables -t filter -C OUTPUT -j $CHAIN 2>/dev/null && exit 0
+    pasang iptables  "$(ports $mode)"
+    pasang ip6tables "$(ports $mode)"
+    ;;
+  --status|*)
+    mode=$(cat $STATE 2>/dev/null); [[ "$mode" =~ ^(basic|full)$ ]] || mode=off
+    echo "Abuse Guard : $mode"
+    [[ "$mode" == off ]] && exit 0
+    echo "Port diblok : $(ports $mode)"
+    echo
+    echo "--- aturan aktif (IPv4) ---"
+    iptables -t filter -S $CHAIN 2>/dev/null || echo "(rantai tidak ada)"
+    ;;
+esac
+exit 0
+EOF
+chmod +x /usr/local/sbin/cas-abuse
+
+# pasang ulang saat VPS booting (aturan iptables hilang setelah reboot)
+cat > /etc/systemd/system/cas-abuse.service <<'EOF'
+[Unit]
+Description=Cassanova Abuse Guard (pasang ulang aturan setelah boot)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cas-abuse --heal
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload >/dev/null 2>&1
+systemctl enable cas-abuse.service >/dev/null 2>&1
+# kalau sudah pernah diaktifkan, pasang lagi sekarang
+/usr/local/sbin/cas-abuse --heal >/dev/null 2>&1
+# pulihkan sendiri kalau ada yang menghapus aturan (mis. skrip firewall lain).
+# --heal keluar seketika kalau Abuse Guard mati, jadi beban cron-nya nol.
+grep -q "cas-abuse --heal" /etc/cron.d/autoscript 2>/dev/null || \
+  echo "*/10 * * * * root /usr/local/sbin/cas-abuse --heal" >> /etc/cron.d/autoscript
+
 ln -sf /usr/local/sbin/cmd /usr/local/sbin/perintah 2>/dev/null
 
 cat > /usr/local/sbin/cas-channel <<'EOF'
@@ -536,6 +633,36 @@ start_stop(){
 }
 
 security_syn(){
+  local o
+  while true; do
+    header "SECURITY & OPTIMASI"
+    local ag; ag=$(cat $ASD/abuse_guard 2>/dev/null); [[ "$ag" =~ ^(basic|full)$ ]] || ag=off
+    case $ag in
+      basic) echo -e " Abuse Guard : ${G}AKTIF${N} (SMTP 25 + SMB 139/445)" ;;
+      full)  echo -e " Abuse Guard : ${G}AKTIF${N} (SMTP + SMB + RDP 3389 + VNC 5900)" ;;
+      *)     echo -e " Abuse Guard : ${R}MATI${N}" ;;
+    esac
+    echo -e " ${Y}(mencegah VPS dipakai buyer untuk spam/scan lalu kena suspend)${N}\n"
+    echo -e " ${C}1.)${N} Terapkan proteksi SYN flood & optimasi TCP"
+    echo -e " ${C}2.)${N} Abuse Guard: blok SMTP 25 + SMB 139/445 ${G}(disarankan)${N}"
+    echo -e " ${C}3.)${N} Abuse Guard: tambah RDP 3389 + VNC 5900"
+    echo -e "      ${Y}(hati-hati kalau ada buyer yang kerja remote)${N}"
+    echo -e " ${C}4.)${N} Matikan Abuse Guard"
+    echo -e " ${C}5.)${N} Lihat aturan yang sedang aktif"
+    echo -e " ${C}6.)${N} Kembali\n"
+    read -rp "Pilih : " o
+    case $o in
+      1) apply_sysctl ;;
+      2) cas-abuse --on basic; msg "${G}Abuse Guard aktif (SMTP + SMB)${N}" ;;
+      3) cas-abuse --on full;  msg "${G}Abuse Guard aktif (SMTP + SMB + RDP + VNC)${N}" ;;
+      4) cas-abuse --off;      msg "${Y}Abuse Guard dimatikan${N}" ;;
+      5) clear; cas-abuse --status; echo; read -rp "Tekan Enter..." ;;
+      *) return ;;
+    esac
+  done
+}
+
+apply_sysctl(){
   header "SECURITY SYN / OPTIMASI"
   cat > /etc/sysctl.d/99-cassanova.conf <<SYS
 net.ipv4.tcp_syncookies=1

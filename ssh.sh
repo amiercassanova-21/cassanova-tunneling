@@ -372,12 +372,16 @@ modify_pass(){
 
 check_login(){
   header "SSH LOGIN AKTIF"
-  local out; out=$(ps aux | grep -E "sshd:|dropbear" | grep -v grep)
-  local i=0 u
-  while read -r u; do
-    [[ -z "$u" ]] && continue; i=$((i+1))
-    printf " %-3s ${Y}%s${N}\n" "$i." "$u"
-  done < <(echo "$out" | grep -oE '[a-z_][a-z0-9_-]*@' | tr -d '@' | sort | uniq -c | awk '{print $2" ("$1" sesi)"}')
+  local i=0 u n
+  # Hanya tampilkan yang memang akun pelanggan (ada di database)
+  local -A DBU=()
+  while read -r u _; do [[ -n "$u" ]] && DBU["$u"]=1; done < "$DB"
+  # Dulu memakai pola "user@" dari judul proses, sehingga sesi Dropbear tidak
+  # pernah muncul (Dropbear tidak menulis nama user di judul proses).
+  while read -r u n; do
+    [[ -z "$u" || -z "${DBU[$u]}" ]] && continue
+    i=$((i+1)); printf " %-3s ${Y}%-20s${N} %s sesi\n" "$i." "$u" "$n"
+  done < <(ssh_sessions | sort)
   [[ $i == 0 ]] && echo -e " ${Y}Tidak ada sesi aktif${N}"
   echo -e "$LINE"; pause
 }
@@ -511,30 +515,13 @@ BANMIN=$(cat $ASD/bantime 2>/dev/null || echo 15)
 now=$(date +%s)
 sset(){ awk -v u="$1" -v f="$2" -v v="$3" '$1==u{$f=v}1' "$DB" > "$DB.t" && mv "$DB.t" "$DB"; }
 
-# Daftar user yang perlu dihitung sesinya (status active & punya limit IP)
-ULIST=$(awk '$4=="active" && $3 ~ /^[0-9]+$/ && $3+0>0 {print $1}' "$DB" | tr '\n' ' ')
-# Hitung sesi SEMUA user sekali jalan. Cara lama memanggil "ps aux" + 3 grep +
-# wc untuk SETIAP akun tiap menit (200 akun = 1000 proses, dan "ps aux" makin
-# lambat justru saat VPS ramai). Sekarang "ps aux" cuma sekali.
+# Hitung sesi SEMUA user sekali jalan (lihat ssh_sessions di lib.sh).
+# Cara lama memanggil "ps aux" + 3 grep + wc untuk SETIAP akun tiap menit,
+# dan hitungannya salah: satu sesi OpenSSH terbaca 2-3 kali (nama user muncul
+# di kolom USER sekaligus di judul proses), sedangkan akun bernama lebih dari
+# 8 huruf yang memakai Dropbear tidak terbaca sama sekali.
 declare -A SESN=()
-if [[ -n "$ULIST" ]]; then
-  while read -r _u _n; do [[ -n "$_u" ]] && SESN["$_u"]=$_n; done < <(
-    ps aux 2>/dev/null | grep -E "sshd:|dropbear" | grep -v grep | awk -v users="$ULIST" '
-      BEGIN{ nu=split(users, U, " ") }
-      {
-        for (i=1; i<=nu; i++) {
-          u=U[i]; if (u=="") continue
-          lu=length(u); s=$0; pos=1
-          # tiru persis: grep -oE "u@|u\b"  lalu  wc -l
-          while ((k=index(substr(s,pos), u)) > 0) {
-            k=pos+k-1; nxt=substr(s, k+lu, 1)
-            if (nxt=="" || nxt !~ /[A-Za-z0-9_]/) C[u]++
-            pos=k+lu
-          }
-        }
-      }
-      END{ for (u in C) print u, C[u] }')
-fi
+while read -r _u _n; do [[ -n "$_u" ]] && SESN["$_u"]=$_n; done < <(ssh_sessions)
 
 while read -r u exp ipl st; do
   [[ -z "$u" ]] && continue

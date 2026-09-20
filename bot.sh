@@ -95,10 +95,14 @@ done
 # SSH: sesi aktif per user
 if [[ -f $ASD/db/ssh.db ]]; then
   body=""; total=0
-  while read -r cnt u; do
+  # ssh_sessions (lib.sh): kolom USER lebar penuh, jadi akun bernama lebih dari
+  # 8 huruf tidak lagi terbaca terpotong, dan "sshd-session" (OpenSSH 9.8+)
+  # ikut terhitung. Cara lama memakai "ps -eo user=" yang dipotong 8 karakter.
+  while read -r u cnt; do
+    [[ -z "$u" ]] && continue
     grep -q "^$u " $ASD/db/ssh.db || continue
     body+="$u | $cnt sesi"$'\n'; total=$((total+1))
-  done < <(ps -eo user=,comm= | awk '($2=="dropbear" || $2=="sshd") && $1!="root" && $1!="sshd" {print $1}' | sort | uniq -c)
+  done < <(ssh_sessions | sort)
   (( total > 0 )) && { send_section "Users Login SSH" "$body" "$total"; sent=1; }
 fi
 [[ $sent == 0 && "$1" == "--manual" ]] && send "$HEAD"$'\n'"Tidak ada user login dalam $MIN menit terakhir."

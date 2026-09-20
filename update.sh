@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.26.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.27.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -200,6 +200,20 @@ recent_ips(){ # $1 = rentang ke belakang dalam DETIK
   tail -n 30000 $LOG | awk -v s="$since" 'substr($0,1,19)>=s' \
   | sed -nE 's/.* from (tcp:|udp:)?(\[[^]]+\]|[0-9.]+):[0-9]+ accepted .*email: ([^ ]+).*/\3 \2/p' \
   | sort -u
+}
+
+# Hitung sesi SSH/Dropbear aktif per user. Keluaran: "user jumlah" tiap baris.
+# Kenapa TIDAK memakai "ps aux": kolom USER-nya dipotong 8 karakter
+# (pelangganlama -> "pelangg+"), jadi akun bernama panjang tidak pernah
+# terbaca. Dipakai lebar 32 supaya utuh.
+# Kenapa memakai kolom USER, bukan judul proses: OpenSSH menulis "user@" di
+# judul proses, tetapi Dropbear TIDAK - prosesnya hanya turun hak akses ke
+# user itu. Dulu sesi Dropbear karena itu tidak pernah terhitung.
+# Pola "sshd" sengaja longgar supaya "sshd-session" (OpenSSH 9.8+) ikut kena.
+ssh_sessions(){
+  ps -eo user:32,args --no-headers 2>/dev/null \
+  | awk '$1!="root" && $1!="sshd" && ($0 ~ /sshd/ || $0 ~ /dropbear/) {c[$1]++}
+         END{ for (u in c) print u, c[u] }'
 }
 EOF
 

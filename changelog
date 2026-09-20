@@ -1,13 +1,29 @@
-v1.26.0
-- Hemat RAM UDPGW (BadVPN). Bawaan badvpn memberi buffer kirim 1 MB untuk
-  tiap klien, dan SC belum pernah menyetelnya. Sekarang dipasang
-  --client-socket-sndbuf 262144.
-  Hasil ukur pada 60 klien penuh: 122,2 MB -> 34,4 MB memori kernel,
-  3,6x lebih hemat. Ukuran efektif 512 KB per klien, masih di atas
-  bawaan Linux, jadi kecepatan UDP tidak dikorbankan.
-- Unit badvpn dirapikan: RestartSec=5 (kalau crash-loop tidak ikut membakar
-  CPU), Nice=5 dan CPUWeight=20 (badvpn mengalah ke Xray/Nginx saat CPU
-  sibuk, supaya koneksi user tidak tersendat).
-- Saat update, hanya badvpn yang direstart sekali karena isi unit-nya
-  berubah. Xray, Dropbear, SSH WS, dan Nginx tidak ikut direstart.
-  Update berikutnya tidak merestart apa pun lagi.
+v1.27.0
+- Perbaikan hitungan sesi SSH. Selama ini hitungannya salah di dua arah:
+  * akun bernama sampai 8 huruf: 1 sesi OpenSSH terbaca 2-3 kali, sehingga
+    buyer bisa terkunci padahal belum melewati limit;
+  * akun bernama lebih dari 8 huruf yang memakai Dropbear: terbaca 0,
+    sehingga limit IP tidak pernah berlaku untuk mereka.
+  Sebabnya "ps aux" memotong kolom nama user di 8 karakter, dan nama user
+  ikut terhitung dua kali dalam satu baris. Sekarang memakai kolom nama
+  lebar penuh, satu sesi dihitung satu kali.
+- Monitor User Login (menu SSH nomor 6) akhirnya menampilkan sesi Dropbear.
+  Dulu hanya sesi OpenSSH yang terlihat, karena Dropbear tidak menulis nama
+  user di judul prosesnya. Jumlah sesi per user juga ikut ditampilkan.
+- Laporan "Users Login SSH" ke Telegram ikut diperbaiki dengan cara yang sama.
+- Sesi OpenSSH versi baru (9.8+, namanya "sshd-session") kini ikut terhitung.
+  Sebelumnya tidak terbaca sama sekali di OS yang lebih baru.
+
+- Baru: ABUSE GUARD di menu FEATURES > Security SYN & Optimasi.
+  Memblok port keluar yang biasa dipakai untuk spam dan scan, supaya VPS
+  tidak kena suspend provider gara-gara ulah buyer.
+  * Mode disarankan : SMTP 25 + SMB 139/445
+  * Mode penuh      : ditambah RDP 3389 + VNC 5900
+  Port 465 dan 587 sengaja TIDAK diblok, karena itu port kirim email yang
+  dipakai aplikasi email pelanggan.
+- Aturan dipasang di rantai sendiri (CAS-ABUSE), jadi tidak mengganggu
+  aturan firewall lain dan bisa dilepas bersih. Lalu lintas lokal dikecualikan.
+- Aturan dipasang ulang otomatis setelah reboot dan diperiksa tiap 10 menit
+  (pemeriksaannya 9 ms, jadi tidak menambah beban).
+- Menu Security SYN & Optimasi jadi submenu; optimasi TCP/SYN yang lama
+  tetap ada di pilihan 1. Nomor menu FEATURES tidak berubah.
