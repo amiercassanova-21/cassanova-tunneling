@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.27.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.27.1"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -1136,16 +1136,31 @@ cat > /usr/local/sbin/running <<'EOF'
 BRAND=$(cat $ASD/brand)
 st(){ systemctl is-active --quiet "$1" 2>/dev/null && echo -e "${G}[ON]${N}" || echo -e "${R}[OFF]${N}"; }
 port(){ ss -tln 2>/dev/null | grep -q ":$1 " && echo -e "${G}[ON]${N}" || echo -e "${R}[OFF]${N}"; }
+# Hanya tampilkan layanan yang unit systemd-nya memang ada di VPS ini.
+# Dulu OPENVPN, SQUID, dan SlowDNS ikut ditampilkan padahal tidak pernah
+# dipasang script, jadi selamanya [OFF] dan VPS terlihat seperti rusak.
+# Kalau suatu saat Anda memasangnya sendiri, barisnya muncul otomatis.
+ada(){ systemctl cat "$1" >/dev/null 2>&1; }
+ROWS=()
+add(){ ada "$2" && ROWS+=("$1" "$(st "$2")"); }
 clear
 echo -e "${B}════════════════════════════════════${N}"
 printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"
 echo -e "${B}════════════════════════════════════${N}\n"
-printf "${G}%-16s${N}: %b\n" \
-  "SSH" "$(st ssh)" "DROPBEAR" "$(st cas-dropbear)" "OPENVPN" "$(st openvpn)" \
-  "SQUID" "$(st squid)" "NGINX" "$(st nginx)" "BADVPN" "$(st badvpn)" \
-  "VMESS" "$(st xray)" "VLESS" "$(st xray)" "TROJAN" "$(st xray)" \
-  "SlowDNS" "$(st slowdns)" "WEB" "$(st nginx)" \
-  "HTTP" "$(port 80)" "HTTPS" "$(port 443)" "GUARD" "$( [[ -f /etc/cron.d/autoscript ]] && echo -e "${G}[ON]${N}" || echo -e "${R}[OFF]${N}")"
+add "SSH"      ssh
+add "DROPBEAR" cas-dropbear
+add "OPENVPN"  openvpn
+add "SQUID"    squid
+add "NGINX"    nginx
+add "BADVPN"   badvpn
+add "VMESS"    xray
+add "VLESS"    xray
+add "TROJAN"   xray
+add "SlowDNS"  slowdns
+add "WEB"      nginx
+ROWS+=("HTTP" "$(port 80)" "HTTPS" "$(port 443)")
+ROWS+=("GUARD" "$( [[ -f /etc/cron.d/autoscript ]] && echo -e "${G}[ON]${N}" || echo -e "${R}[OFF]${N}")")
+printf "${G}%-16s${N}: %b\n" "${ROWS[@]}"
 echo -e "\n${B}════════════════════════════════════${N}\n"
 read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"
 EOF

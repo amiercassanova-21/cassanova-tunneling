@@ -14,7 +14,17 @@ fh(){ cat "$@" 2>/dev/null | md5sum | cut -d' ' -f1; }
 H_DB=$(fh /etc/default/dropbear); H_BV=$(fh /etc/systemd/system/badvpn.service); H_WS=$(fh /usr/local/bin/ws-ssh.py /etc/systemd/system/ws-ssh.service)
 
 echo -e "${GRN}[SSH 1/5] Paket...${NC}"
-apt install -y dropbear stunnel4 cmake make gcc git build-essential fail2ban >/dev/null 2>&1
+# stunnel4 sudah tidak dipasang lagi: tidak pernah dikonfigurasi script ini,
+# jadi hanya jadi paket mati. SSL/TLS pembeli sudah dilayani nginx di port 443
+# lewat jalur /ssh-ws (payload WS ada di info akun).
+apt install -y dropbear cmake make gcc git build-essential fail2ban >/dev/null 2>&1
+
+# Bersihkan sisa stunnel4 dari instalasi lama: kalau terpasang TANPA config,
+# unit-nya bisa duduk dalam status failed dan bikin bingung saat cek layanan.
+if systemctl cat stunnel4 >/dev/null 2>&1 && ! ls /etc/stunnel/*.conf >/dev/null 2>&1; then
+  systemctl disable --now stunnel4 >/dev/null 2>&1
+  systemctl reset-failed stunnel4 >/dev/null 2>&1
+fi
 
 # ---------- Dropbear ----------
 echo -e "${GRN}[SSH 2/5] Dropbear...${NC}"

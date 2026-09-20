@@ -1,29 +1,16 @@
-v1.27.0
-- Perbaikan hitungan sesi SSH. Selama ini hitungannya salah di dua arah:
-  * akun bernama sampai 8 huruf: 1 sesi OpenSSH terbaca 2-3 kali, sehingga
-    buyer bisa terkunci padahal belum melewati limit;
-  * akun bernama lebih dari 8 huruf yang memakai Dropbear: terbaca 0,
-    sehingga limit IP tidak pernah berlaku untuk mereka.
-  Sebabnya "ps aux" memotong kolom nama user di 8 karakter, dan nama user
-  ikut terhitung dua kali dalam satu baris. Sekarang memakai kolom nama
-  lebar penuh, satu sesi dihitung satu kali.
-- Monitor User Login (menu SSH nomor 6) akhirnya menampilkan sesi Dropbear.
-  Dulu hanya sesi OpenSSH yang terlihat, karena Dropbear tidak menulis nama
-  user di judul prosesnya. Jumlah sesi per user juga ikut ditampilkan.
-- Laporan "Users Login SSH" ke Telegram ikut diperbaiki dengan cara yang sama.
-- Sesi OpenSSH versi baru (9.8+, namanya "sshd-session") kini ikut terhitung.
-  Sebelumnya tidak terbaca sama sekali di OS yang lebih baru.
-
-- Baru: ABUSE GUARD di menu FEATURES > Security SYN & Optimasi.
-  Memblok port keluar yang biasa dipakai untuk spam dan scan, supaya VPS
-  tidak kena suspend provider gara-gara ulah buyer.
-  * Mode disarankan : SMTP 25 + SMB 139/445
-  * Mode penuh      : ditambah RDP 3389 + VNC 5900
-  Port 465 dan 587 sengaja TIDAK diblok, karena itu port kirim email yang
-  dipakai aplikasi email pelanggan.
-- Aturan dipasang di rantai sendiri (CAS-ABUSE), jadi tidak mengganggu
-  aturan firewall lain dan bisa dilepas bersih. Lalu lintas lokal dikecualikan.
-- Aturan dipasang ulang otomatis setelah reboot dan diperiksa tiap 10 menit
-  (pemeriksaannya 9 ms, jadi tidak menambah beban).
-- Menu Security SYN & Optimasi jadi submenu; optimasi TCP/SYN yang lama
-  tetap ada di pilihan 1. Nomor menu FEATURES tidak berubah.
+v1.27.1
+- Check All Service sekarang hanya menampilkan layanan yang memang ada di
+  VPS. Dulu OPENVPN, SQUID, dan SlowDNS ikut ditampilkan padahal script ini
+  tidak pernah memasangnya, jadi selamanya [OFF] dan VPS terlihat seperti
+  punya 3 layanan rusak.
+- Kalau suatu saat Anda memasang sendiri salah satunya, barisnya muncul
+  otomatis tanpa perlu update lagi.
+- Layanan yang memang terpasang tapi sedang mati tetap ditampilkan [OFF]
+  seperti biasa, jadi masalah nyata tidak ikut tersembunyi.
+- stunnel4 tidak lagi dipasang saat install. Paket itu tidak pernah
+  dikonfigurasi script ini, jadi hanya jadi beban. SSL/TLS pembeli tetap
+  dilayani nginx di port 443 lewat jalur /ssh-ws, memakai payload WS yang
+  sudah tercetak di info akun.
+- Sisa stunnel4 dari instalasi lama ikut dirapikan: kalau terpasang tanpa
+  config, unit-nya dimatikan supaya tidak duduk dalam status failed.
+  Kalau Anda sendiri sudah membuat config stunnel, tidak akan diganggu.
