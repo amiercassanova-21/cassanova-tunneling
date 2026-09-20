@@ -10,34 +10,72 @@ apt install -y zip unzip >/dev/null 2>&1
 
 # helper notifikasi dipakai script lain (mis. saat create/expire)
 cat > /usr/local/lib/autoscript/notify.sh <<'EOF'
-# Header notif: nama script | domain | IP
-_cas_head(){
-  local I=/etc/autoscript/ipinfo.json ip isp
-  ip=$(jq -r '.ip // "-"' $I 2>/dev/null)
-  isp=$(jq -r '.org // "-"' $I 2>/dev/null | sed 's/^AS[0-9]* //')
-  echo "<code>IP     : $ip
-DOMAIN : $(cat /etc/autoscript/domain 2>/dev/null)
-ISP    : $isp</code>"
+# ---------------------------------------------------------------
+# Satu bentuk untuk SEMUA notifikasi: judul tebal, isi, lalu satu
+# baris kaki. Dulu header IP/DOMAIN/ISP tiga baris diulang di SETIAP
+# pesan, sehingga 20 notif sehari = 60 baris pengulangan.
+# ---------------------------------------------------------------
+CAS_NLOG=/var/log/cas-notify.log
+
+# 2026-10-20 -> 20 Okt 2026 (kalau gagal, tanggal asli dipakai apa adanya)
+cas_tgl(){
+  local t
+  t=$(LC_ALL=C date -d "$1" '+%d %b %Y' 2>/dev/null) || { echo "$1"; return; }
+  echo "$t" | sed 's/Jan/Jan/; s/Feb/Feb/; s/Mar/Mar/; s/Apr/Apr/; s/May/Mei/; s/Jun/Jun/;
+                   s/Jul/Jul/; s/Aug/Agu/; s/Sep/Sep/; s/Oct/Okt/; s/Nov/Nov/; s/Dec/Des/'
 }
-# kirim pesan Telegram (HTML). Baris baru pakai newline asli, bukan %0A.
+# sisa hari sampai tanggal itu, mis. "30 hari lagi" / "hari ini"
+cas_sisa(){
+  local n s
+  n=$(( ( $(date -d "$1" +%s 2>/dev/null || echo 0) - $(date -d "$(date +%F)" +%s) ) / 86400 ))
+  (( n > 1 ))  && { echo "$n hari lagi"; return; }
+  (( n == 1 )) && { echo "besok"; return; }
+  (( n == 0 )) && { echo "hari ini"; return; }
+  echo "sudah lewat"
+}
+
+_cas_foot(){
+  local d; d=$(cat /etc/autoscript/domain 2>/dev/null)
+  echo "<i>${d:-VPS} · $(date '+%H:%M')</i>"
+}
+
+# Kirim ke Telegram. Kalau gagal, dicatat DAN dicoba ulang tanpa HTML supaya
+# isinya tetap sampai. Dulu respons API dibuang ke /dev/null, jadi notif yang
+# gagal kirim hilang diam-diam tanpa pernah ketahuan.
 _cas_send(){
   local BOT_TOKEN CHAT_ID NOTIFY
   [[ -f /etc/autoscript/bot ]] || return 0
   . /etc/autoscript/bot
   [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" || "$NOTIFY" != "on" ]] && return 0
-  ( curl -s --max-time 15 -o /dev/null \
+  (
+    r=$(curl -s --max-time 15 \
       --data-urlencode "chat_id=$CHAT_ID" \
-      --data-urlencode "text=$(_cas_head)"$'\n'"$1" \
+      --data-urlencode "text=$1"$'\n'"$(_cas_foot)" \
       --data-urlencode "parse_mode=HTML" \
-      "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" ) >/dev/null 2>&1 &
+      --data-urlencode "disable_web_page_preview=true" \
+      "https://api.telegram.org/bot$BOT_TOKEN/sendMessage")
+    if [[ "$r" != *'"ok":true'* ]]; then
+      printf '%s | gagal kirim | %s\n' "$(date '+%F %T')" "$(printf '%s' "$r" | head -c 300)" >> $CAS_NLOG
+      curl -s --max-time 15 -o /dev/null \
+        --data-urlencode "chat_id=$CHAT_ID" \
+        --data-urlencode "text=$(printf '%s' "$1" | sed -e 's/<[^>]*>//g')" \
+        "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
+    fi
+  ) >/dev/null 2>&1 &
   disown 2>/dev/null; return 0
 }
-# cas_notify "teks"      -> pesan singkat (event akun)
-cas_notify(){ _cas_send "$1"; }
-# cas_notify_raw "teks"  -> pesan panjang (akun penuh); sama-sama diberi header
+
+# Bentuk kartu: judul (sudah berikon) lalu isi. TIDAK memakai blockquote,
+# karena isi yang dikirim pemanggil kadang sudah mengandung blockquote dan
+# Telegram tidak menerima blockquote bersarang.
+_cas_card(){ printf '%s\n%s' "<b>$1</b>" "$2"; }
+
+# cas_notify "judul" "isi"        -> notifikasi biasa
+# cas_notify_quote "judul" "isi"  -> sama; nama lama dipertahankan
+# cas_notify_raw "teks"           -> blok panjang (akun penuh) apa adanya
+cas_notify(){ _cas_send "$(_cas_card "$1" "$2")"; }
+cas_notify_quote(){ _cas_send "$(_cas_card "$1" "$2")"; }
 cas_notify_raw(){ _cas_send "$1"; }
-# cas_notify_quote "judul" "isi" -> judul dalam blockquote (tanda kutip), lalu isi
-cas_notify_quote(){ _cas_send "<blockquote><b>$1</b>"$'\n'"$2</blockquote>"; }
 EOF
 
 
@@ -49,17 +87,18 @@ BOT_TOKEN=""; CHAT_ID=""
 [[ -f $ASD/bot ]] && . $ASD/bot
 [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && { echo "Bot belum diatur"; exit 0; }
 MIN=$(cat $ASD/report_interval 2>/dev/null); [[ "$MIN" =~ ^[0-9]+$ && $MIN -gt 0 ]] || MIN=60
-IPV=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
-ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
 DOMAIN=$(cat $ASD/domain)
-HEAD="<code>IP     : $IPV
-DOMAIN : $DOMAIN
-ISP    : $ISP</code>"
+# Satu baris kaki, bukan header IP/DOMAIN/ISP tiga baris yang diulang tiap bagian.
+FOOT="<i>$DOMAIN · $(date '+%H:%M')</i>"
 
 send(){
-  curl -s --max-time 20 -o /dev/null --data-urlencode "chat_id=$CHAT_ID" \
-    --data-urlencode "text=$1" --data-urlencode "parse_mode=HTML" \
-    "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
+  local r
+  r=$(curl -s --max-time 20 --data-urlencode "chat_id=$CHAT_ID" \
+    --data-urlencode "text=$1"$'\n'"$FOOT" --data-urlencode "parse_mode=HTML" \
+    --data-urlencode "disable_web_page_preview=true" \
+    "https://api.telegram.org/bot$BOT_TOKEN/sendMessage")
+  [[ "$r" == *'"ok":true'* ]] || printf '%s | laporan gagal kirim | %s\n' \
+    "$(date '+%F %T')" "$(printf '%s' "$r" | head -c 200)" >> /var/log/cas-notify.log
 }
 # kirim per potongan (batas pesan Telegram ~4096 karakter)
 send_section(){ # judul, isi(multiline), total
@@ -67,12 +106,12 @@ send_section(){ # judul, isi(multiline), total
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     if (( ${#chunk} + ${#line} > 3300 )); then
-      send "$HEAD"$'\n'"<blockquote><b>$title</b> (bag. $part)</blockquote>"$'\n'"$chunk"; chunk=""; part=$((part+1))
+      send "<b>👥 $title</b> <i>(bagian $part)</i>"$'\n'"<pre>$chunk</pre>"; chunk=""; part=$((part+1))
     fi
     chunk+="$line"$'\n'
   done <<< "$body"
-  [[ $part -gt 1 ]] && title="$title (bag. $part)"
-  send "$HEAD"$'\n'"<blockquote><b>$title</b></blockquote>"$'\n'"$chunk"$'\n'"<b>Total : $total</b>"
+  [[ $part -gt 1 ]] && title="$title (bagian $part)"
+  send "<b>👥 $title</b>"$'\n'"<pre>$chunk</pre>Total: <b>$total</b> akun"
 }
 
 LOG=/var/log/xray/access.log
@@ -89,7 +128,7 @@ for p in vless vmess trojan; do
     u=${e#*.}
     body+="$u $(hbytes $(usage_get $p "$u")) ${ips}IP | $conns"$'\n'; total=$((total+1))
   done < <(echo "$DATA" | awk -v p="$p." 'index($1,p)==1 { c[$1]++; k=$1" "$2; if(!(k in seen)){seen[k]=1; ip[$1]++} } END{ for(u in c) print u, c[u], ip[u] }' | sort -k2 -nr)
-  (( total > 0 )) && { send_section "Users Login ${p^^}" "$body" "$total"; sent=1; }
+  (( total > 0 )) && { send_section "Sedang Online ${p^^}" "$body" "$total"; sent=1; }
 done
 
 # SSH: sesi aktif per user
@@ -103,9 +142,9 @@ if [[ -f $ASD/db/ssh.db ]]; then
     grep -q "^$u " $ASD/db/ssh.db || continue
     body+="$u | $cnt sesi"$'\n'; total=$((total+1))
   done < <(ssh_sessions | sort)
-  (( total > 0 )) && { send_section "Users Login SSH" "$body" "$total"; sent=1; }
+  (( total > 0 )) && { send_section "Sedang Online SSH" "$body" "$total"; sent=1; }
 fi
-[[ $sent == 0 && "$1" == "--manual" ]] && send "$HEAD"$'\n'"Tidak ada user login dalam $MIN menit terakhir."
+[[ $sent == 0 && "$1" == "--manual" ]] && send "<b>👥 Sedang Online</b>"$'\n'"Tidak ada akun yang online dalam $MIN menit terakhir."
 exit 0
 EOF
 chmod +x /usr/local/sbin/cas-report

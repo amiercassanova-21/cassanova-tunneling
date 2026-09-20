@@ -730,7 +730,7 @@ change_domain(){
     sed -i "s/server_name .*/server_name $nd;/" /etc/nginx/conf.d/xray.conf
     systemctl restart nginx
     msg "${G}Domain berhasil diganti ke $nd${N}"
-    cas_notify_quote "CHANGE DOMAIN" "Domain: <code>$nd</code>" 2>/dev/null || true
+    cas_notify_quote "✅ Domain Diganti" "<pre>Domain baru : $nd</pre>Semua akun perlu dibuatkan link ulang." 2>/dev/null || true
   else
     # kembalikan cert lama
     cp -f /tmp/old.crt $ASD/xray.crt 2>/dev/null

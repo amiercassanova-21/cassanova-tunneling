@@ -1,16 +1,34 @@
-v1.27.1
-- Check All Service sekarang hanya menampilkan layanan yang memang ada di
-  VPS. Dulu OPENVPN, SQUID, dan SlowDNS ikut ditampilkan padahal script ini
-  tidak pernah memasangnya, jadi selamanya [OFF] dan VPS terlihat seperti
-  punya 3 layanan rusak.
-- Kalau suatu saat Anda memasang sendiri salah satunya, barisnya muncul
-  otomatis tanpa perlu update lagi.
-- Layanan yang memang terpasang tapi sedang mati tetap ditampilkan [OFF]
-  seperti biasa, jadi masalah nyata tidak ikut tersembunyi.
-- stunnel4 tidak lagi dipasang saat install. Paket itu tidak pernah
-  dikonfigurasi script ini, jadi hanya jadi beban. SSL/TLS pembeli tetap
-  dilayani nginx di port 443 lewat jalur /ssh-ws, memakai payload WS yang
-  sudah tercetak di info akun.
-- Sisa stunnel4 dari instalasi lama ikut dirapikan: kalau terpasang tanpa
-  config, unit-nya dimatikan supaya tidak duduk dalam status failed.
-  Kalau Anda sendiri sudah membuat config stunnel, tidak akan diganggu.
+v1.28.0
+NOTIFIKASI KE BUYER
+- Bentuknya disamakan: judul tebal berikon, satu blok rincian yang rata,
+  lalu satu baris kaki berisi domain dan jam. Dulu tiap pesan diawali
+  header IP/DOMAIN/ISP tiga baris, jadi 20 notif sehari = 60 baris
+  pengulangan.
+- Perbaikan penting: 10 notifikasi dulu menaruh blok <pre> di dalam
+  <blockquote>, dan 4 di antaranya blockquote di dalam blockquote.
+  Dokumentasi Telegram menyatakan pre tidak boleh berada di dalam
+  entitas lain. Sekarang semua rata di tingkat atas.
+- Notifikasi yang gagal terkirim sekarang dicatat di
+  /var/log/cas-notify.log dan dicoba ulang tanpa HTML supaya isinya
+  tetap sampai. Dulu respons Telegram dibuang, jadi notif yang gagal
+  hilang diam-diam.
+- Satu bahasa, satu gaya judul. Tanggal ditulis "20 Okt 2026" dan
+  diberi sisa hari, bukan "2026-10-20" mentah. Jam tanpa detik.
+- Peringatan masa aktif script ikut disamakan bentuknya.
+
+BOT ADMIN (Worker)
+- Menu utama dirampingkan dari 11 tombol/6 baris jadi 7 tombol/4 baris.
+  Yang sering dipakai (Daftarkan IP, Perpanjang) naik ke baris pertama.
+  Yang jarang dipakai pindah ke "Lainnya", termasuk Hapus VPS supaya
+  tidak tertekan tanpa sengaja.
+- Beranda tidak lagi memakai tiga baris garis pemisah dalam satu pesan
+  pendek; angka disusun dalam satu blok yang lurus.
+- Pengingat lisensi harian sekarang PUNYA TOMBOL: tiap VPS yang segera
+  habis bisa diperpanjang 30 hari sekali tekan, langsung dari pesan
+  pengingat. Dulu hanya teks, jadi harus buka menu dan mengetik IP lagi.
+- Perbaikan: tombol "Renew 30d" dan "Renew 7d" di kartu VPS selama ini
+  MATI - callback-nya tidak pernah ditangani. Sekarang berfungsi.
+- Perbaikan: layar konfirmasi hapus memuat karakter & yang tidak
+  di-escape, sehingga pesannya ditolak Telegram. Kalimatnya diperbaiki.
+- Tampilan /start dan tombol Kembali kini memakai satu sumber yang sama,
+  jadi tidak bisa berbeda bentuk lagi.

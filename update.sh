@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.27.1"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.28.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -158,7 +158,7 @@ expire_all(){
     done < <(cat $ASD/db/$p.db)
   done
   trash_prune
-  [[ -n "$list" ]] && cas_notify "⏰ <b>Akun Expired</b> (masuk Recovery)"$'\n'"$list"
+  [[ -n "$list" ]] && cas_notify "⌛ Akun Kedaluwarsa" "<pre>$list</pre>Masuk daftar Recovery."
 }
 
 # Kumpulkan pemakaian bandwidth per user (byte) dari Xray stats
@@ -250,7 +250,9 @@ for p in $PROTOS; do
       used=0; [[ -f $ASD/usage/$p/$u ]] && read -r used < $ASD/usage/$p/$u
       [[ "$used" =~ ^[0-9]+$ ]] || used=0
       if (( used >= q * 1073741824 )); then xray_del $p "$u"; db_set $p "$u" 6 quota
-        cas_notify "📛 <b>Kuota Habis</b>"$'\n'"${p^^} <code>$u</code> (${q}GB) dikunci"; continue; fi
+        cas_notify "⌛ Kuota Habis" "<pre>Nama  : $u
+Jenis : ${p^^}
+Kuota : ${q} GB terpakai habis</pre>Akun dikunci sampai diperpanjang."; continue; fi
     fi
     # limit IP (pakai konfirmasi beruntun: IP operator seluler sering berganti,
     # 1 perangkat bisa terbaca 2 IP sesaat. Kunci hanya jika pelanggaran menetap.)
@@ -272,8 +274,10 @@ for p in $PROTOS; do
         xray_del $p "$u"; db_set $p "$u" 6 "banned:$(( now + BANMIN*60 ))"
         # daftar IP UNIK + waktu terakhir terlihat (bukan tiap baris log)
         iplist=$(tail -n 20000 /var/log/xray/access.log 2>/dev/null | sed -nE "s#^([0-9/]+ ([0-9:]+))[^ ]* from (tcp:|udp:)?(\\[[^]]+\\]|[0-9.]+):[0-9]+ accepted .*email: $p\\.$u\\b.*#\\4 \\2#p" | awk '{last[$1]=$2} END{for(i in last) print last[i]" "i}' | sort | tail -n 5)
-        cas_notify_quote "Multi Login ${p^^}" "<pre>✓ $u
-$iplist</pre><blockquote>Lock - $(date +%T)"$'\n'"Open - $(date -d "+$BANMIN min" +%T)</blockquote>"
+        cas_notify_quote "🔒 Akun Dikunci Otomatis" "<pre>Nama   : $u
+Jenis  : ${p^^}
+Alasan : melebihi batas perangkat
+Dibuka : $(date -d "+$BANMIN min" '+%H:%M')</pre><pre>$iplist</pre>"
       fi
     fi
   done < $ASD/db/$p.db          # baca langsung, tanpa proses 'cat'
@@ -420,8 +424,9 @@ Buka link di atas, pilih $UP, lalu tempel $idlabel akun ini
 untuk melihat sisa masa aktif dan kuota.
 $BR
 <i>Ketuk tiap kotak untuk menyalin satu per satu.</i>"
-    local icon="🆕"; [[ "$notif" == quote ]] && icon="♻️"
-    cas_notify_raw "$icon <b>$ntitle</b>"$'\n'"$body"
+    # ✅ dipakai untuk akun baru maupun akun yang dipulihkan: dua-duanya berhasil
+    local icon="✅"
+    cas_notify_raw "<b>$icon $ntitle</b>"$'\n'"$body"
   fi
   clear
   echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#UP}+8)/2 )) "$UP ACCOUNT"; echo -e "$LINE"
@@ -600,9 +605,9 @@ delete(){
   else pick_user || return; confirm_pick || return; fi
   local dexp=$(db_field $PROTO "$U" 2)
   lock_db; remove_account $PROTO "$U"; unlock_db
-  cas_notify_quote "Delete User" "<pre>User    : $U
-Expired : $dexp
-Type    : $PROTO</pre>"
+  cas_notify_quote "⛔ Akun Dihapus" "<pre>Nama   : $U
+Jenis  : $UP
+Aktif  : sampai $(cas_tgl "$dexp")</pre>Masuk daftar Recovery."
   done_box "DELETE Successfully" "USER" "$U" "STATUS" "DELETED (masuk Recovery)"; pause
 }
 
@@ -622,10 +627,10 @@ renew(){
   st=$(db_field $PROTO "$U" 6)
   if [[ "$st" == "quota" ]]; then xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"; db_set $PROTO "$U" 6 active; fi
   unlock_db
-  cas_notify_quote "Renew/Extend User" "<pre>User       : $U
-Added      : $d Days
-Expires on : $new
-Type       : $PROTO</pre>"
+  cas_notify_quote "✅ Akun Diperpanjang" "<pre>Nama      : $U
+Jenis     : $UP
+Tambahan  : $d hari
+Aktif s/d : $(cas_tgl "$new") ($(cas_sisa "$new"))</pre>"
   done_box "RENEW Successfully" "USER" "$U" "ADDED" "$d Days" "EXPIRED" "$new"; pause
 }
 
@@ -667,8 +672,9 @@ lock_user(){
   [[ "$(db_field $PROTO "$U" 6)" == "active" ]] && xray_del $PROTO "$U"
   db_set $PROTO "$U" 6 locked
   unlock_db
-  cas_notify_quote "Lock $UP (Manual)" "<pre>User : $U
-Lock : $(date +%T)</pre>"
+  cas_notify_quote "🔒 Akun Dikunci" "<pre>Nama   : $U
+Jenis  : $UP
+Alasan : dikunci manual oleh admin</pre>"
   done_box "LOCK Successfully" "USER" "$U" "STATUS" "LOCK"; pause
 }
 
@@ -684,8 +690,8 @@ unlock_user(){
   xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"
   db_set $PROTO "$U" 6 active
   unlock_db
-  cas_notify_quote "Unlock $UP" "<pre>User : $U
-Open : $(date +%T)</pre>"
+  cas_notify_quote "✅ Akun Dibuka" "<pre>Nama  : $U
+Jenis : $UP</pre>"
   done_box "UNLOCKED Successfully" "USER" "$U" "STATUS" "UNLOCKED"; pause
 }
 
@@ -977,7 +983,7 @@ license_check(){
       echo "expired" > $ASD/license_state
       if [[ $enforce == 1 ]]; then
         lic_services_stop
-        cas_notify "⛔ <b>Layanan dihentikan</b>"$'\n'"Server lisensi tidak bisa dihubungi selama lebih dari $gdays hari."$'\n'"Pastikan VPS terhubung internet, lalu ketik <code>renewsc</code>. Bila perlu hubungi admin." 2>/dev/null
+        cas_notify "⛔ Layanan Dihentikan" "Server lisensi tidak bisa dihubungi lebih dari $gdays hari."$'\n'"Pastikan VPS terhubung internet, lalu ketik <code>renewsc</code>. Bila perlu hubungi admin." 2>/dev/null
       fi
       return 1
     fi
@@ -1859,19 +1865,22 @@ case $AMB in
 esac
 IP=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
 D=$(cat $ASD/domain 2>/dev/null)
-L="━━━━━━━━━━━━━━━━━━━━"
-TXT="⏳ <b>MASA AKTIF SCRIPT</b>
-$L
-<code>Domain  :</code> $D
-<code>IP      :</code> $IP
-<code>Berakhir:</code> $EXP
-$L
-Masa aktif script Anda $SISA.
-Segera hubungi admin untuk perpanjangan agar
-layanan VPN tidak terhenti.
-$L
-<i>Setelah diperpanjang admin, layanan aktif
-otomatis dalam ±2 menit. Bila perlu ketik</i> <code>renewsc</code>"
+# Bentuknya disamakan dengan notifikasi lain: judul tebal berikon, satu blok
+# <pre> di TINGKAT ATAS (bukan di dalam blockquote), lalu baris kaki.
+# Tanggal ditulis gaya Indonesia lewat cas_tgl bila tersedia.
+TGL="$EXP"
+if [[ -f /usr/local/lib/autoscript/notify.sh ]]; then
+  . /usr/local/lib/autoscript/notify.sh 2>/dev/null
+  type cas_tgl &>/dev/null && TGL="$(cas_tgl "$EXP")"
+fi
+TXT="<b>⏳ Masa Aktif Script</b>
+<pre>Domain   : $D
+IP       : $IP
+Berakhir : $TGL</pre>Masa aktif script Anda $SISA.
+Segera hubungi admin untuk perpanjangan agar layanan VPN tidak terhenti.
+
+<i>Setelah diperpanjang admin, layanan aktif otomatis dalam ±2 menit. Bila perlu ketik</i> <code>renewsc</code>
+<i>${D:-VPS} · $(date '+%H:%M')</i>"
 
 if curl -s --max-time 20 -o /dev/null \
      --data-urlencode "chat_id=$CHAT_ID" --data-urlencode "parse_mode=HTML" \
