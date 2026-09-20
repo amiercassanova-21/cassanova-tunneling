@@ -502,6 +502,32 @@ DB=$ASD/db/ssh.db
 BANMIN=$(cat $ASD/bantime 2>/dev/null || echo 15)
 now=$(date +%s)
 sset(){ awk -v u="$1" -v f="$2" -v v="$3" '$1==u{$f=v}1' "$DB" > "$DB.t" && mv "$DB.t" "$DB"; }
+
+# Daftar user yang perlu dihitung sesinya (status active & punya limit IP)
+ULIST=$(awk '$4=="active" && $3 ~ /^[0-9]+$/ && $3+0>0 {print $1}' "$DB" | tr '\n' ' ')
+# Hitung sesi SEMUA user sekali jalan. Cara lama memanggil "ps aux" + 3 grep +
+# wc untuk SETIAP akun tiap menit (200 akun = 1000 proses, dan "ps aux" makin
+# lambat justru saat VPS ramai). Sekarang "ps aux" cuma sekali.
+declare -A SESN=()
+if [[ -n "$ULIST" ]]; then
+  while read -r _u _n; do [[ -n "$_u" ]] && SESN["$_u"]=$_n; done < <(
+    ps aux 2>/dev/null | grep -E "sshd:|dropbear" | grep -v grep | awk -v users="$ULIST" '
+      BEGIN{ nu=split(users, U, " ") }
+      {
+        for (i=1; i<=nu; i++) {
+          u=U[i]; if (u=="") continue
+          lu=length(u); s=$0; pos=1
+          # tiru persis: grep -oE "u@|u\b"  lalu  wc -l
+          while ((k=index(substr(s,pos), u)) > 0) {
+            k=pos+k-1; nxt=substr(s, k+lu, 1)
+            if (nxt=="" || nxt !~ /[A-Za-z0-9_]/) C[u]++
+            pos=k+lu
+          }
+        }
+      }
+      END{ for (u in C) print u, C[u] }')
+fi
+
 while read -r u exp ipl st; do
   [[ -z "$u" ]] && continue
   if [[ "$st" == banned:* ]]; then
@@ -509,7 +535,7 @@ while read -r u exp ipl st; do
     continue
   fi
   [[ "$st" != active || ! "$ipl" =~ ^[0-9]+$ || "$ipl" -eq 0 ]] && continue
-  n=$(ps aux | grep -E "sshd:|dropbear" | grep -v grep | grep -oE "$u@|$u\b" | wc -l)
+  n=${SESN["$u"]:-0}
   if (( n > ipl )); then usermod -L "$u" 2>/dev/null; pkill -u "$u" 2>/dev/null; sset "$u" 4 "banned:$(( now + BANMIN*60 ))"
     cas_notify_quote "Multi Login SSH" "<pre>✓ $u
 $n sesi (limit $ipl)</pre><blockquote>Lock - $(date +%T)"$'\n'"Open - $(date -d "+$BANMIN min" +%T)</blockquote>"; fi

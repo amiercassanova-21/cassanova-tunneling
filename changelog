@@ -1,21 +1,20 @@
-v1.24.0
-- CREATE ALL PROTOCOL dan TRIAL ALL PROTOCOL disatukan jadi satu menu
-  "All Protocol", dan dipindah dari menu utama ke menu FEATURES nomor 6
-  (tepat di atas BACKUP & RESTORE).
-- Isi menu All Protocol: Create Account, Trial Account, Hapus Semua Akun
-  Trial, Back to Features.
-- Akibat pemindahan ini: menu FEATURES bergeser satu nomor mulai dari
-  Backup (jadi 7), Restore (8), sampai Back to Menu (jadi 16).
-  Menu utama kembali bersih: pilihan 1-9 dan x.
-- Baru: Hapus Semua Akun Trial. Sekali konfirmasi, semua akun trial di
-  SSH, VLESS, VMESS, dan TROJAN dihapus sekaligus, tidak perlu masuk ke
-  tiap protokol satu-satu. Akun berbayar tidak ikut tersentuh.
-  Jadwal hapus otomatis yang sudah tidak terpakai ikut dibersihkan.
-- Perintah cepat baru: deltrial (sama dengan menu Hapus Semua Akun Trial).
-  addall dan trialall tetap seperti biasa.
-- Ditegaskan & diuji ulang: akun trial tidak pernah masuk daftar Recovery,
-  baik saat dihapus manual, saat habis waktunya, maupun lewat Hapus Semua
-  Akun Trial.
-- Ditegaskan & diuji ulang: isi Recovery yang sudah lebih dari 4 bulan
-  (120 hari) dibuang otomatis setiap hari, untuk SSH maupun Xray, supaya
-  daftarnya tidak menumpuk.
+v1.25.0
+- Hemat CPU: dua penjaga yang jalan TIAP MENIT dirombak agar tidak lagi
+  memanggil ratusan proses. Hasil ukur pada 200 akun:
+    xray-guard : 3523 ms -> 244 ms  (14x lebih ringan)
+    ssh-guard  : 1382 ms ->  78 ms  (17x lebih ringan)
+  Total beban tetap turun dari ~5 detik CPU per menit jadi ~0,3 detik.
+  Efeknya paling terasa justru saat VPS sedang ramai.
+- ssh-guard dulu memanggil "ps aux" untuk SETIAP akun (200 akun = 200 kali
+  per menit, dan "ps aux" makin lambat saat proses makin banyak). Sekarang
+  cukup sekali untuk semua akun.
+- usage_collect (penghitung kuota) dulu memanggil echo+awk+mkdir+cat untuk
+  tiap user tiap menit. Sekarang dihitung di dalam bash, tanpa proses
+  tambahan per user.
+- Penghitungan limit IP tidak lagi memanggil awk per akun.
+- Perilaku TIDAK berubah: diuji berdampingan dengan versi lama memakai data
+  yang sama, hasilnya identik (akun yang dikunci, hitungan kuota, dan
+  hitungan IP sama persis).
+- Satu perbedaan kecil yang disengaja: kalau berkas kuota seorang user
+  rusak atau kosong, sekarang dibaca sebagai 0 (dulu kolomnya tampil
+  kosong). Berkas kuota normal tidak terpengaruh.

@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.24.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.25.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -163,19 +163,33 @@ expire_all(){
 
 # Kumpulkan pemakaian bandwidth per user (byte) dari Xray stats
 usage_collect(){
+  # Versi hemat: seluruh penjumlahan dikerjakan di dalam bash, tanpa memanggil
+  # echo/awk/mkdir/cat per user. Pada 200 akun, cara lama memanggil ~1600 proses
+  # tiap menit; cara ini hanya 2 proses (xray + jq). Hasilnya tetap sama.
   local name val e p u old
-  xray api statsquery --server=$API -pattern "user>>>" -reset 2>/dev/null \
-  | jq -r '.stat[]? | "\(.name) \(.value // 0)"' 2>/dev/null \
-  | while read -r name val; do
-      e=$(echo "$name" | awk -F'>>>' '{print $2}')
-      [[ "$e" != *.* || -z "$val" || "$val" == "0" ]] && continue
-      p=${e%%.*}; u=${e#*.}
-      mkdir -p $ASD/usage/$p
-      old=$(cat $ASD/usage/$p/$u 2>/dev/null || echo 0)
-      echo $(( old + val )) > $ASD/usage/$p/$u
-    done
+  declare -A CAS_ADD=()
+  while read -r name val; do
+    [[ -z "$name" || -z "$val" || "$val" == "0" ]] && continue
+    e=${name#user>>>}; e=${e%%>>>*}     # "user>>>vless.budi>>>traffic>>>uplink" -> "vless.budi"
+    [[ "$e" == *.* ]] || continue
+    [[ "$val" =~ ^[0-9]+$ ]] || continue
+    CAS_ADD["$e"]=$(( ${CAS_ADD["$e"]:-0} + val ))
+  done < <(xray api statsquery --server=$API -pattern "user>>>" -reset 2>/dev/null \
+           | jq -r '.stat[]? | "\(.name) \(.value // 0)"' 2>/dev/null)
+  for e in "${!CAS_ADD[@]}"; do
+    p=${e%%.*}; u=${e#*.}
+    [[ -d $ASD/usage/$p ]] || mkdir -p $ASD/usage/$p
+    old=0; [[ -f $ASD/usage/$p/$u ]] && read -r old < $ASD/usage/$p/$u
+    [[ "$old" =~ ^[0-9]+$ ]] || old=0
+    printf '%s\n' "$(( old + ${CAS_ADD[$e]} ))" > $ASD/usage/$p/$u
+  done
 }
-usage_get(){ cat $ASD/usage/$1/$2 2>/dev/null || echo 0; }
+usage_get(){
+  local v=0
+  [[ -f $ASD/usage/$1/$2 ]] && read -r v < $ASD/usage/$1/$2
+  [[ "$v" =~ ^[0-9]+$ ]] || v=0
+  echo "$v"
+}
 hbytes(){ numfmt --to=iec --suffix=B "$1" 2>/dev/null || echo "$1"; }
 
 # Output: "user ip" unik dari access log N menit terakhir
@@ -202,7 +216,11 @@ BANMIN=$(cat $ASD/bantime 2>/dev/null || echo 15)
 # berapa kali pelanggaran beruntun sebelum akun dikunci (default 2 = tahan rotasi IP seluler)
 NEEDCONF=$(cat $ASD/ipconfirm 2>/dev/null); [[ "$NEEDCONF" =~ ^[1-9]$ ]] || NEEDCONF=2
 usage_collect
-COUNTS=$(recent_ips 60 | awk '{c[$1]++} END{for(u in c) print u, c[u]}')
+# Jumlah IP per user dimuat sekali ke dalam array. Cara lama memanggil
+# "echo | awk" untuk SETIAP akun tiap menit; sekarang nol proses per akun.
+declare -A CAS_CNT=()
+while read -r _u _n; do [[ -n "$_u" ]] && CAS_CNT["$_u"]=$_n; done \
+  < <(recent_ips 60 | awk '{c[$1]++} END{for(u in c) print u, c[u]}')
 
 for p in $PROTOS; do
   while read -r u exp id ipl q st; do
@@ -215,22 +233,25 @@ for p in $PROTOS; do
     [[ "$st" != "active" ]] && continue
     # kuota bandwidth
     if [[ "$q" =~ ^[0-9]+$ ]] && (( q > 0 )); then
-      used=$(usage_get $p "$u")
+      used=0; [[ -f $ASD/usage/$p/$u ]] && read -r used < $ASD/usage/$p/$u
+      [[ "$used" =~ ^[0-9]+$ ]] || used=0
       if (( used >= q * 1073741824 )); then xray_del $p "$u"; db_set $p "$u" 6 quota
         cas_notify "📛 <b>Kuota Habis</b>"$'\n'"${p^^} <code>$u</code> (${q}GB) dikunci"; continue; fi
     fi
     # limit IP (pakai konfirmasi beruntun: IP operator seluler sering berganti,
     # 1 perangkat bisa terbaca 2 IP sesaat. Kunci hanya jika pelanggaran menetap.)
     if [[ "$ipl" =~ ^[0-9]+$ ]] && (( ipl > 0 )); then
-      n=$(echo "$COUNTS" | awk -v u="$p.$u" '$1==u{print $2}')
+      n=${CAS_CNT["$p.$u"]}
       SFILE=$ASD/ipstreak/$p.$u
       STREAK=0
       if [[ -z "$n" ]] || (( n <= ipl )); then
-        rm -f "$SFILE"                       # aman -> hitungan beruntun direset
+        [[ -f "$SFILE" ]] && rm -f "$SFILE"  # aman -> hitungan beruntun direset
       else
-        mkdir -p $ASD/ipstreak
-        STREAK=$(( $(cat "$SFILE" 2>/dev/null || echo 0) + 1 ))
-        echo "$STREAK" > "$SFILE"
+        [[ -d $ASD/ipstreak ]] || mkdir -p $ASD/ipstreak
+        _old=0; [[ -f "$SFILE" ]] && read -r _old < "$SFILE"
+        [[ "$_old" =~ ^[0-9]+$ ]] || _old=0
+        STREAK=$(( _old + 1 ))
+        printf '%s\n' "$STREAK" > "$SFILE"
       fi
       if [[ -n "$n" ]] && (( n > ipl )) && (( STREAK >= NEEDCONF )); then
         rm -f "$SFILE"
@@ -241,7 +262,7 @@ for p in $PROTOS; do
 $iplist</pre><blockquote>Lock - $(date +%T)"$'\n'"Open - $(date -d "+$BANMIN min" +%T)</blockquote>"
       fi
     fi
-  done < <(cat $ASD/db/$p.db)
+  done < $ASD/db/$p.db          # baca langsung, tanpa proses 'cat'
 done
 unlock_db
 
