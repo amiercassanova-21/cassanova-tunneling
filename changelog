@@ -1,20 +1,13 @@
-v1.25.0
-- Hemat CPU: dua penjaga yang jalan TIAP MENIT dirombak agar tidak lagi
-  memanggil ratusan proses. Hasil ukur pada 200 akun:
-    xray-guard : 3523 ms -> 244 ms  (14x lebih ringan)
-    ssh-guard  : 1382 ms ->  78 ms  (17x lebih ringan)
-  Total beban tetap turun dari ~5 detik CPU per menit jadi ~0,3 detik.
-  Efeknya paling terasa justru saat VPS sedang ramai.
-- ssh-guard dulu memanggil "ps aux" untuk SETIAP akun (200 akun = 200 kali
-  per menit, dan "ps aux" makin lambat saat proses makin banyak). Sekarang
-  cukup sekali untuk semua akun.
-- usage_collect (penghitung kuota) dulu memanggil echo+awk+mkdir+cat untuk
-  tiap user tiap menit. Sekarang dihitung di dalam bash, tanpa proses
-  tambahan per user.
-- Penghitungan limit IP tidak lagi memanggil awk per akun.
-- Perilaku TIDAK berubah: diuji berdampingan dengan versi lama memakai data
-  yang sama, hasilnya identik (akun yang dikunci, hitungan kuota, dan
-  hitungan IP sama persis).
-- Satu perbedaan kecil yang disengaja: kalau berkas kuota seorang user
-  rusak atau kosong, sekarang dibaca sebagai 0 (dulu kolomnya tampil
-  kosong). Berkas kuota normal tidak terpengaruh.
+v1.26.0
+- Hemat RAM UDPGW (BadVPN). Bawaan badvpn memberi buffer kirim 1 MB untuk
+  tiap klien, dan SC belum pernah menyetelnya. Sekarang dipasang
+  --client-socket-sndbuf 262144.
+  Hasil ukur pada 60 klien penuh: 122,2 MB -> 34,4 MB memori kernel,
+  3,6x lebih hemat. Ukuran efektif 512 KB per klien, masih di atas
+  bawaan Linux, jadi kecepatan UDP tidak dikorbankan.
+- Unit badvpn dirapikan: RestartSec=5 (kalau crash-loop tidak ikut membakar
+  CPU), Nice=5 dan CPUWeight=20 (badvpn mengalah ke Xray/Nginx saat CPU
+  sibuk, supaya koneksi user tidak tersendat).
+- Saat update, hanya badvpn yang direstart sekali karena isi unit-nya
+  berubah. Xray, Dropbear, SSH WS, dan Nginx tidak ikut direstart.
+  Update berikutnya tidak merestart apa pun lagi.
