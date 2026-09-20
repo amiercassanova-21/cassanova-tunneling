@@ -1,30 +1,9 @@
-v1.23.0
-- Baru: TRIAL ALL PROTOCOL. Sekali klik langsung jadi akun trial SSH +
-  VLESS + VMESS + TROJAN dengan UUID sama. Ada di menu utama pilihan "t",
-  atau lewat perintah: trialall
-- Username trial dibuat sendiri, cukup isi durasi (menit, default 60).
-  Limit 1 IP, kuota unlimited. Akun terhapus sendiri saat waktunya habis,
-  dan tidak masuk daftar Recovery.
-- Kalau salah satu protokol gagal dibuat, yang sudah terlanjur dibuat
-  dihapus kembali, sama seperti CREATE ALL PROTOCOL.
-- Tambahan: m-xray <proto> --create dan m-ssh ssh --create sekarang
-  menerima durasi dalam menit (contoh: 60m), bukan hanya hari.
-
-- Baru: VLESS XHTTP (transport terbaru Xray, penerus WS/gRPC).
-  Jalan di port sendiri (2096) dengan TLS dipegang Xray langsung, tidak
-  lewat nginx. Semua akun VLESS yang sudah ada otomatis dapat XHTTP,
-  tanpa perlu dibuat ulang.
-- Link XHTTP muncul sendiri di layar akun dan di Telegram, dengan kotak
-  salin sendiri seperti link lainnya.
-- Kenapa tidak lewat nginx: XHTTP modern memakai mode stream-up yang butuh
-  reverse proxy full-duplex (grpc_pass); lewat nginx proxy_pass hasilnya
-  tidak stabil. Port sendiri terbukti stabil pada pengujian (unduhan besar,
-  unggahan, dan banyak sesi berurutan).
-- XHTTP hanya untuk VLESS. VMESS dilewati karena link vmess+xhttp masih
-  banyak ditolak v2rayNG; TROJAN dilewati supaya tidak menambah port.
-- Aman kalau tidak didukung: bila Xray di VPS menolak config XHTTP atau
-  portnya tidak mau mendengarkan, fitur dilewati dan link XHTTP tidak
-  pernah ditampilkan, jadi pembeli tidak menerima link mati.
-- Sertifikat dibaca ulang sendiri saat SSL diperpanjang, tanpa restart
-  Xray, jadi koneksi pelanggan tidak terputus.
-- Menu FEATURES > Cek Port VPS sekarang ikut memeriksa port XHTTP.
+v1.23.1
+- TRIAL ALL PROTOCOL: limit IP sekarang bisa dipilih, tidak lagi dipaksa 1.
+  Bawaannya 0 = unlimited, supaya akun trial yang disebar ke grup bisa
+  dipakai banyak orang sekaligus. Isi angka kalau trialnya untuk 1 orang
+  (contoh 3 untuk 3 perangkat).
+- Dengan limit 0, pengunci otomatis (xray-guard & ssh-guard) melewati akun
+  itu, jadi akun trial tidak akan terkunci sendiri walau dipakai ramai.
+- Menu CREATE ALL PROTOCOL (pilihan 0) tidak berubah sama sekali,
+  bawaannya tetap 2 IP.

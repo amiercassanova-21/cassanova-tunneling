@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.23.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.23.1"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -1156,7 +1156,12 @@ if (( TRIAL )); then
   read -rp "Durasi trial (menit) [60] : " D; D=${D:-60}
   num_ok "$D" || die "Durasi harus angka"
   (( D > 0 )) || die "Durasi harus lebih dari 0 menit"
-  IPL=1; Q=0
+  # Bawaan 0 = unlimited, supaya trial yang disebar ke grup bisa dipakai banyak
+  # orang bersamaan. Kalau diisi angka, xray-guard & ssh-guard akan mengunci
+  # akun begitu pemakainya melebihi angka itu.
+  read -rp "Limit IP (0 = unlimited, untuk dibagi ke grup) [0] : " IPL; IPL=${IPL:-0}
+  num_ok "$IPL" || die "Limit IP harus angka"
+  Q=0
   # cari nama trial yang belum terpakai di semua protokol
   for _try in 1 2 3 4 5 6 7 8 9 10; do
     U=$(gen_trial_user); _bentrok=0
@@ -1244,7 +1249,17 @@ for blok in "$OUT_VL" "$OUT_VM" "$OUT_TR"; do
 done
 sec "CEK MASA AKTIF"
 echo "https://$DOMAIN/cek"
-(( TRIAL )) && { echo -e "${B}$BR${N}"; echo -e " ${Y}Akun trial $DLAB, terhapus otomatis saat habis.${N}"; }
+if (( TRIAL )); then
+  echo -e "${B}$BR${N}"
+  echo -e " ${Y}Akun trial $DLAB, terhapus otomatis saat habis.${N}"
+  if [[ "$IPL" == 0 ]]; then
+    echo -e " ${Y}Limit IP unlimited: aman dibagi ke grup, boleh dipakai${N}"
+    echo -e " ${Y}banyak orang sekaligus.${N}"
+  else
+    echo -e " ${R}Limit $IPL IP: kalau dibagi ke grup, akun akan terkunci${N}"
+    echo -e " ${R}sendiri begitu pemakainya lebih dari $IPL.${N}"
+  fi
+fi
 echo -e "$LINE"
 
 # ---------------- kirim ke Telegram (4 pesan berurutan) ----------------
@@ -1269,7 +1284,10 @@ $L
 🔎 <b>CEK MASA AKTIF</b>
 <code>https://$DOMAIN/cek</code>
 $L
-$( (( TRIAL )) && echo "⚠️ <b>Akun trial $DLAB.</b> Terhapus otomatis saat waktunya habis." && echo "$L" )<i>Config VLESS, VMESS, dan TROJAN menyusul di pesan berikutnya.</i>"
+$( (( TRIAL )) && { echo "⚠️ <b>Akun trial $DLAB.</b> Terhapus otomatis saat waktunya habis."
+     [[ "$IPL" == 0 ]] && echo "👥 Limit IP unlimited, boleh dipakai banyak orang sekaligus." \
+                       || echo "👤 Limit $IPL IP, akan terkunci sendiri kalau dipakai lebih dari itu."
+     echo "$L"; } )<i>Config VLESS, VMESS, dan TROJAN menyusul di pesan berikutnya.</i>"
   tg "$M1"
   kirim_proto(){ # $1 = ikon  $2 = judul  $3 = blok keluaran
     local t="$1 <b>$2</b>
