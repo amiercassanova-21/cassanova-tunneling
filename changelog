@@ -1,3 +1,48 @@
+v1.31.0
+FAIL2BAN: PROTEKSI BRUTE-FORCE (mengisi celah nyata)
+- Temuan: fail2ban SUDAH terpasang di script lama, tapi tidak pernah diberi
+  jail. Jadi ia hanya menjalankan jail sshd bawaan (OpenSSH 22 via auth.log)
+  dan TIDAK menjaga Dropbear di 143/109 sama sekali - praktis tidak berguna.
+- Ini beda tugas dengan ssh-guard: ssh-guard membatasi jumlah sesi per akun
+  (anti berbagi akun); fail2ban mem-ban IP yang gagal login berkali-kali
+  (anti brute-force). Keduanya tidak tumpang tindih.
+- Ditambahkan jail Dropbear (143,109) + OpenSSH (22): 5 gagal dalam 10 menit
+  -> ban 30 menit. cas-dropbear jalan dengan -E (log ke journald), jadi
+  jail-nya pakai backend systemd, bukan berkas auth.log.
+- ignoreip localhost dipasang: SSH-WS meneruskan ke 127.0.0.1:143, jadi
+  tanpa ini brute-force lewat jalur WS bisa salah nge-ban 127.0.0.1 dan
+  memutus semua koneksi WS. Ini sudah diantisipasi.
+- Config diuji dulu (fail2ban-client -t); kalau tidak lolos, jail lama
+  dipertahankan supaya proteksi tidak malah mati.
+
+HASIL UJI (mesin fail2ban asli)
+- Filter Dropbear diuji dengan fail2ban-regex terhadap baris log Dropbear
+  asli: "Bad password", "nonexistent user", "exit before auth" tertangkap;
+  login sah (pubkey sukses, child connection) TIDAK tertangkap.
+- Config jail lolos "fail2ban-client -t": configuration test successful.
+
+v1.30.0
+VLESS REALITY DIHAPUS (tidak dipakai)
+- Reality dibuang total: cabang link, tampilan akun, notifikasi Telegram,
+  keluaran --link, script cas-reality, cron --ensure, logrotate, dan menu
+  "Setelan VLESS Reality" (Features nomor 14). Menu digeser: Auto Update
+  jadi 14, Back to Menu jadi 15.
+- Penting: Reality BUKAN tipe akun tersendiri. Tiap user VLESS punya
+  beberapa link (ws/grpc/upgrade/xhttp/reality), jadi menghapus Reality
+  tidak menghapus user mana pun - hanya membuang satu pilihan link.
+- VPS lama ikut dibersihkan otomatis saat updatesc: inbound vless-reality
+  dicopot dari config (dengan uji Xray & cadangan lebih dulu, protokol lain
+  tidak tersentuh), lalu berkas kunci, cron, dan logrotate Reality dihapus.
+  Aman dijalankan berulang - VPS yang sudah bersih dilewati.
+- cekport tidak lagi menampilkan baris VLESS Reality.
+
+HASIL UJI (biner Xray 26.3.27 asli)
+- Config setelah inbound Reality dicopot: lolos 'xray run -test'.
+- Pencopotan dijalankan 2x: idempoten, tidak error di config yang sudah bersih.
+- Ikut ditemukan & diperbaiki saat uji: uji config sempat memakai berkas
+  berakhiran .tmp, padahal Xray menebak format dari ekstensi berkas
+  (gagal "failed to get format"). Berkas uji sekarang berakhiran .json.
+
 v1.29.0
 TROJAN SEKARANG BISA XHTTP
 - Sebelumnya XHTTP hanya untuk VLESS. Sekarang Trojan punya inbound XHTTP

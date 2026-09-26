@@ -67,6 +67,53 @@ systemctl enable cas-dropbear >/dev/null 2>&1
 if ! systemctl is-active --quiet cas-dropbear; then systemctl restart cas-dropbear
 elif [[ "$(fh /etc/default/dropbear)" != "$H_DB" ]]; then svc_restart cas-dropbear; fi
 
+# ---------- Fail2ban: proteksi brute-force login ----------
+# fail2ban SUDAH terpasang tapi dulu tidak diberi jail, jadi hanya jalan jail
+# sshd bawaan (OpenSSH port 22 via auth.log) - tidak menjaga Dropbear di 143/109
+# sama sekali. Blok ini yang mengisinya. Ini BEDA tugas dengan ssh-guard:
+#   ssh-guard  = batasi jumlah sesi per akun (anti berbagi akun)
+#   fail2ban   = ban IP yang gagal login berkali-kali (anti brute-force)
+# cas-dropbear jalan dengan -E (log ke stderr -> journald), jadi jail-nya pakai
+# backend systemd, bukan berkas auth.log. Filter dropbear bawaan fail2ban sudah
+# menangkap "Bad password"/"nonexistent user"/"exit before auth"; sudah diuji
+# dengan fail2ban-regex terhadap baris log Dropbear asli.
+if command -v fail2ban-client >/dev/null 2>&1; then
+  # python3-systemd membuat backend systemd andal (kalau tak ada, fail2ban
+  # jatuh ke pembacaan lewat journalctl - tetap jalan, hanya kurang efisien).
+  apt install -y python3-systemd >/dev/null 2>&1 || true
+  mkdir -p /etc/fail2ban/jail.d
+  # ignoreip localhost WAJIB: SSH-WS meneruskan ke 127.0.0.1:143, jadi tanpa ini
+  # brute-force lewat jalur WS akan salah nge-ban 127.0.0.1 dan memutus semua WS.
+  cat > /etc/fail2ban/jail.d/cas.local <<'F2B'
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1
+bantime  = 30m
+findtime = 10m
+maxretry = 5
+backend  = systemd
+
+[sshd]
+enabled  = true
+port     = 22
+maxretry = 5
+
+[dropbear]
+enabled     = true
+port        = 143,109
+filter      = dropbear
+maxretry    = 5
+journalmatch = _SYSTEMD_UNIT=cas-dropbear.service
+F2B
+  systemctl enable fail2ban >/dev/null 2>&1
+  # uji config dulu; kalau tak lolos, jangan restart supaya fail2ban lama tetap jalan
+  if fail2ban-client -t >/dev/null 2>&1; then
+    systemctl restart fail2ban >/dev/null 2>&1
+    echo -e "${GRN}[SSH] Fail2ban: jail Dropbear 143/109 + OpenSSH 22 aktif${NC}"
+  else
+    echo -e "${YEL}[SSH] Config fail2ban tidak lolos uji, jail lama dipertahankan${NC}"
+  fi
+fi
+
 # ---------- BadVPN UDP ----------
 echo -e "${GRN}[SSH 3/5] BadVPN UDP...${NC}"
 if [[ ! -f /usr/bin/badvpn-udpgw ]]; then

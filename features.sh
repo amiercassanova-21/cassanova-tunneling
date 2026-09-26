@@ -767,8 +767,6 @@ cek_port(){
     "80|Nginx non-TLS" "8080|Nginx non-TLS" "2052|Nginx non-TLS" "8880|Nginx non-TLS"
     "443|Nginx TLS" "8443|Nginx TLS" "2053|Nginx TLS"
   )
-  local rp; rp=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
-  [[ "$rp" =~ ^[0-9]+$ ]] && ports+=("$rp|VLESS Reality")
   local xp; xp=$(cat $ASD/xhttp_port 2>/dev/null | tr -d '[:space:]')
   [[ "$xp" =~ ^[0-9]+$ && -f $ASD/xhttp_on ]] && ports+=("$xp|VLESS XHTTP TLS")
   local xt; xt=$(cat $ASD/xhttp_port_trojan 2>/dev/null | tr -d '[:space:]')
@@ -799,102 +797,6 @@ cek_port(){
   pause
 }
 
-pakai_kamuflase(){ # $1 = domain
-  local cur; cur=$(cat $ASD/reality_dest 2>/dev/null)
-  echo "$1" > $ASD/reality_dest
-  echo -e "\n${Y}Menerapkan (xray direstart sebentar)...${N}"
-  if /usr/local/sbin/cas-reality --restart; then
-    msg "${G}Kamuflase sekarang: $1${N}"
-  else
-    echo "$cur" > $ASD/reality_dest
-    /usr/local/sbin/cas-reality --restart >/dev/null 2>&1
-    msg "${R}Gagal diterapkan, dikembalikan ke $cur${N}"
-  fi
-}
-
-cari_kamuflase(){
-  local list=(www.asus.com www.lovelive-anime.jp addons.mozilla.org aws.amazon.com
-              www.tesla.com www.samsung.com shopee.co.id www.bing.com)
-  local ok=() d n i=0
-  header "CARI DOMAIN KAMUFLASE"
-  echo -e " ${Y}Tiap domain diuji dengan koneksi Reality sungguhan.${N}"
-  echo -e " ${Y}Perlu sekitar 15 detik per domain, mohon tunggu.${N}\n"
-  for d in "${list[@]}"; do
-    printf " %-24s " "$d"
-    if /usr/local/sbin/cas-reality --test "$d" >/dev/null 2>&1; then
-      ok+=("$d"); echo -e "${G}bisa dipakai${N}"
-    else
-      echo -e "${R}tidak cocok${N}"
-    fi
-  done
-  echo -e "$LINE"
-  if [[ ${#ok[@]} == 0 ]]; then
-    echo -e " ${R}Tidak ada yang cocok dari daftar ini.${N}"
-    echo -e " Coba isi domain sendiri lewat menu 3."; pause; return
-  fi
-  echo -e " ${G}Yang bisa dipakai:${N}\n"
-  for d in "${ok[@]}"; do i=$((i+1)); printf "  ${C}%s.)${N} %s\n" "$i" "$d"; done
-  echo -e "\n  ${C}0.)${N} Batal"
-  echo; read -rp "Pilih nomor : " n
-  [[ "$n" =~ ^[0-9]+$ ]] && (( n >= 1 && n <= ${#ok[@]} )) || return
-  pakai_kamuflase "${ok[$((n-1))]}"
-}
-
-set_reality(){
-  local o v cur
-  while true; do
-    header "SETELAN VLESS REALITY"
-    if [[ ! -s $ASD/reality_pub ]]; then
-      echo -e " ${R}Reality belum aktif di VPS ini.${N}"
-      echo -e " Jalankan ${G}updatesc${N} lebih dulu.\n"; pause; return
-    fi
-    echo -e " ${G}Port       : ${Y}$(cat $ASD/reality_port 2>/dev/null)${N}"
-    echo -e " ${G}Kamuflase  : ${Y}$(cat $ASD/reality_dest 2>/dev/null)${N}"
-    echo -e " ${G}PublicKey  : ${O}$(cat $ASD/reality_pub 2>/dev/null)${N}"
-    echo -e " ${G}ShortId    : ${O}$(cat $ASD/reality_sid 2>/dev/null)${N}"
-    echo -e " ${Y}(Reality tidak butuh domain maupun SSL)${N}\n"
-    echo -e " ${C}1.)${N} Ubah port"
-    echo -e " ${C}2.)${N} Cari domain kamuflase otomatis ${Y}(disarankan)${N}"
-    echo -e " ${C}3.)${N} Isi domain kamuflase sendiri"
-    echo -e " ${C}4.)${N} Buat ulang kunci (semua config Reality lama jadi tidak berlaku)"
-    echo -e " ${C}5.)${N} Kembali\n"
-    read -rp "Pilih : " o
-    case $o in
-      1) read -rp "Port baru (1-65535) : " v
-         num_ok "$v" && (( v > 0 && v < 65536 )) || { msg "${R}Port tidak valid${N}"; continue; }
-         if ss -Hltn 2>/dev/null | awk '{print $4}' | sed 's/.*://' | grep -qx "$v"; then
-           if [[ "$v" != "$(cat $ASD/reality_port 2>/dev/null)" ]]; then
-             msg "${R}Port $v sudah dipakai layanan lain${N}"; continue
-           fi
-         fi
-         cur=$(cat $ASD/reality_port 2>/dev/null); echo "$v" > $ASD/reality_port
-         echo -e "\n${Y}Menerapkan (xray direstart, koneksi user terputus sebentar)...${N}"
-         if /usr/local/sbin/cas-reality --restart; then msg "${G}Port Reality: $v${N}"
-         else echo "$cur" > $ASD/reality_port; msg "${R}Gagal, dikembalikan ke $cur${N}"; fi ;;
-      2) cari_kamuflase ;;
-      3) echo -e "\n ${Y}Domain harus diuji dulu: situs yang mendukung TLS 1.3 pun bisa${N}"
-         echo -e " ${Y}gagal kalau sertifikatnya terlalu besar.${N}\n"
-         read -rp "Domain kamuflase : " v
-         [[ "$v" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || { msg "${R}Domain tidak valid${N}"; continue; }
-         echo -e "\n${Y}Menguji $v (sekitar 15 detik)...${N}"
-         if /usr/local/sbin/cas-reality --test "$v"; then
-           echo -e " ${G}$v cocok dipakai${N}"
-         else
-           read -rp "$(echo -e " ${R}$v TIDAK cocok. Tetap pakai? (y/t) : ${N}")" y
-           [[ "$y" != y ]] && continue
-         fi
-         pakai_kamuflase "$v" ;;
-      4) read -rp "$(echo -e " ${R}Semua config Reality yang sudah dibagikan akan mati. Lanjut? (y/t) : ${N}")" y
-         [[ "$y" != y ]] && continue
-         rm -f $ASD/reality_priv $ASD/reality_pub $ASD/reality_sid
-         echo -e "\n${Y}Membuat kunci baru & menerapkan...${N}"
-         if /usr/local/sbin/cas-reality --restart; then msg "${G}Kunci Reality dibuat ulang${N}"
-         else msg "${R}Gagal membuat kunci${N}"; fi ;;
-      *) return ;;
-    esac
-  done
-}
-
 # Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
 cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }
 coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
@@ -902,7 +804,6 @@ coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
 # mode non-interaktif: adddomain
 if [[ "$1" == "--domain" ]]; then change_domain; exit 0; fi
 if [[ "$1" == "--port" ]]; then cek_port; exit 0; fi
-if [[ "$1" == "--reality" ]]; then set_reality; exit 0; fi
 if [[ "$1" == "--restore" ]]; then if [[ -n "$2" ]]; then restore_url "$2"; else restore_vps; fi; exit 0; fi
 
 while true; do
@@ -923,13 +824,12 @@ while true; do
   echo -e " ${C}11.)${N} Change Domain VPS"
   echo -e " ${C}12.)${N} Information System"
   echo -e " ${C}13.)${N} Cek Port VPS"
-  echo -e " ${C}14.)${N} Setelan VLESS Reality"
-  echo -e " ${C}15.)${N} Auto Update"
-  echo -e " ${C}16.)${N} Back to Menu"
+  echo -e " ${C}14.)${N} Auto Update"
+  echo -e " ${C}15.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-16 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-15 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "check_bandwidth" ;;
@@ -947,9 +847,8 @@ while true; do
     11) cas_run "change_domain" ;;
     12) cas_run "info_system" ;;
     13) cas_run "cek_port" ;;
-    14) cas_run "set_reality" ;;
-    15) cas-update; exit 0 ;;
-    16) exit 0 ;;
+    14) cas-update; exit 0 ;;
+    15) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac

@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.29.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.31.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -329,17 +329,8 @@ st_label(){
   esac
 }
 
-mk_link(){ # net(ws|up|grpc|reality) tls(1|0)  -> pakai variabel ID & REM
+mk_link(){ # net(ws|up|grpc|xh) tls(1|0)  -> pakai variabel ID & REM
   local port sec path t qs j tlsv
-  if [[ $1 == reality ]]; then
-    local rp rd rpub rsid
-    rp=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
-    rd=$(cat $ASD/reality_dest 2>/dev/null | tr -d '[:space:]')
-    rpub=$(cat $ASD/reality_pub 2>/dev/null | tr -d '[:space:]')
-    rsid=$(cat $ASD/reality_sid 2>/dev/null | tr -d '[:space:]')
-    echo "vless://$ID@$DOMAIN:$rp?encryption=none&security=reality&type=tcp&headerType=none&fp=chrome&sni=$rd&pbk=$rpub&sid=$rsid#$REM"
-    return
-  fi
   # XHTTP: tiap protokol punya port & penanda siap sendiri
   local _xpf=$ASD/xhttp_port
   [[ $PROTO == trojan ]] && _xpf=$ASD/xhttp_port_trojan
@@ -411,9 +402,7 @@ Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
 Expired On    : $exp"
     # tiap bagian dibungkus kotak sendiri supaya di Telegram bisa disalin satu per satu
     blk(){ printf '%s\n%s\n<code>%s</code>' "$BR" "$1" "$2"; }
-    local rbl="" xbl=""
-    [[ $PROTO == vless && -s $ASD/reality_pub ]] && \
-      rbl=$'\n'"$(blk "🛡 <b>$UP REALITY</b>" "$(mk_link reality 1)")"
+    local xbl=""
     (( xhon )) && xbl=$'\n'"$(blk "🚀 <b>$UP XHTTP TLS</b>" "$(mk_link xh 1)")"
     local body="📋 <b>RINCIAN AKUN</b>
 <pre>$info</pre>
@@ -421,7 +410,7 @@ $(blk "🔐 <b>$UP WS TLS</b>"          "$(mk_link ws 1)")
 $(blk "🔓 <b>$UP WS NON-TLS</b>"      "$(mk_link ws 0)")
 $(blk "⚡ <b>$UP GRPC</b>"                "$(mk_link grpc 1)")
 $(blk "🆙 <b>$UP UPGRADE TLS</b>"     "$(mk_link up 1)")
-$(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$xbl$rbl
+$(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$xbl
 $BR
 🔎 <b>CEK MASA AKTIF</b>
 <code>https://$DOMAIN/cek</code>
@@ -459,7 +448,6 @@ $BR
   sec "$UP Upgrade TLS";     mk_link up 1
   sec "$UP Upgrade NO TLS";  mk_link up 0
   (( xhon )) && { sec "$UP XHTTP TLS"; mk_link xh 1; }
-  if [[ $PROTO == vless && -s $ASD/reality_pub ]]; then sec "$UP REALITY"; mk_link reality 1; fi
   sec "CEK MASA AKTIF"
   echo -e " ${C}https://$DOMAIN/cek${N}"
   echo
@@ -797,8 +785,6 @@ case "$2" in
     printf 'LINK|%s UPGRADE NON-TLS|%s\n' "$UP" "$(mk_link up 0)"
     { [[ $PROTO == vless && -f $ASD/xhttp_on ]] || [[ $PROTO == trojan && -f $ASD/xhttp_on_trojan ]]; } && \
       printf 'LINK|%s XHTTP TLS|%s\n' "$UP" "$(mk_link xh 1)"
-    [[ $PROTO == vless && -s $ASD/reality_pub ]] && \
-      printf 'LINK|%s REALITY|%s\n' "$UP" "$(mk_link reality 1)"
     exit 0 ;;
   --renew|--del|--recovery)
     QUICK=1
@@ -1557,8 +1543,8 @@ jq '
 # Kenapa tidak lewat nginx: XHTTP modern memakai mode stream-up/stream-one yang
 # butuh reverse proxy full-duplex (grpc_pass). Lewat proxy_pass HTTP/1.1 nginx
 # hasilnya tidak bisa diandalkan. Jadi XHTTP diberi port sendiri dan TLS-nya
-# dipegang Xray langsung - pola yang sama seperti REALITY di script ini, dan
-# sudah diuji utuh (unduh besar, unggah, banyak sesi berurutan).
+# dipegang Xray langsung, dan sudah diuji utuh (unduh besar, unggah,
+# banyak sesi berurutan).
 # Sertifikat dibaca dari berkas dengan oneTimeLoading:false, sehingga saat
 # acme.sh memperbarui SSL, Xray membaca sendiri tanpa restart (koneksi aman).
 # Catatan Trojan: Trojan XHTTP sudah diuji dengan biner Xray asli - unduh
@@ -1601,165 +1587,37 @@ done
 unset _xp _P _DEF _PF XHPORT
 
 # =====================================================
-#  VLESS REALITY (TCP langsung, tanpa nginx & tanpa SSL)
+#  HAPUS VLESS REALITY (tidak dipakai) - bersihkan VPS lama
 # =====================================================
-cat > /usr/local/sbin/cas-reality <<'EOF'
-#!/bin/bash
-# Kelola inbound VLESS Reality.
-#   cas-reality            -> pasang/segarkan inbound (tanpa restart)
-#   cas-reality --restart  -> pasang lalu restart xray
-#   cas-reality --keys     -> cetak port, dest, publicKey, shortId
-# Config baru hanya dipasang kalau lolos "xray run -test", jadi protokol lain
-# tidak mungkin ikut mati karena Reality.
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ASD=/etc/autoscript
-CFG=/usr/local/etc/xray/config.json
-LOG=/var/log/cas-reality.log
-b64u(){ base64 -w0 | tr '+/' '-_' | tr -d '='; }
-
-# --test <domain>: uji apakah domain itu layak jadi kamuflase, dengan
-# menjalankan server + klien Reality sungguhan di localhost. Ini satu-satunya
-# cara yang benar: situs bisa TLS 1.3 tapi tetap gagal kalau rantai
-# sertifikatnya terlalu besar sehingga jabat tangan tidak selesai.
-if [[ "$1" == "--test" ]]; then
-  d="$2"
-  [[ "$d" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || exit 2
-  tk=$(mktemp -d) || exit 2
-  xray x25519 > $tk/k.txt 2>/dev/null
-  tp=$(grep -i '^PrivateKey' $tk/k.txt 2>/dev/null | sed 's/.*: *//')
-  tu=$(grep -i 'PublicKey'   $tk/k.txt 2>/dev/null | sed 's/.*: *//')
-  if [[ ${#tp} -ne 43 || ${#tu} -ne 43 ]]; then rm -rf $tk; exit 2; fi
-  sp=$(( RANDOM % 8000 + 21000 )); cp=$(( sp + 1 ))
-  cat > $tk/s.json <<J
-{ "log":{"loglevel":"error"},
-  "inbounds":[{"listen":"127.0.0.1","port":$sp,"protocol":"vless",
-    "settings":{"clients":[{"id":"11111111-1111-1111-1111-111111111111"}],"decryption":"none"},
-    "streamSettings":{"network":"tcp","security":"reality",
-      "realitySettings":{"target":"$d:443","xver":0,"serverNames":["$d"],
-        "privateKey":"$tp","shortIds":["","00aa9d24"]}}}],
-  "outbounds":[{"protocol":"freedom"}] }
-J
-  cat > $tk/c.json <<J
-{ "log":{"loglevel":"error"},
-  "inbounds":[{"listen":"127.0.0.1","port":$cp,"protocol":"socks","settings":{"udp":false}}],
-  "outbounds":[{"protocol":"vless",
-    "settings":{"vnext":[{"address":"127.0.0.1","port":$sp,
-      "users":[{"id":"11111111-1111-1111-1111-111111111111","encryption":"none"}]}]},
-    "streamSettings":{"network":"tcp","security":"reality",
-      "realitySettings":{"serverName":"$d","fingerprint":"chrome",
-        "password":"$tu","shortId":"00aa9d24"}}}] }
-J
-  xray run -c $tk/s.json >/dev/null 2>&1 & spid=$!
-  xray run -c $tk/c.json >/dev/null 2>&1 & cpid=$!
-  sleep 3
-  rc=1
-  curl -s --max-time 12 -o /dev/null -x socks5h://127.0.0.1:$cp https://api.ipify.org && rc=0
-  kill $spid $cpid >/dev/null 2>&1; wait $spid $cpid >/dev/null 2>&1
-  rm -rf $tk
-  exit $rc
-fi
-
-# --ensure: dipakai cron. Kalau inbound Reality hilang (mis. gagal sesaat saat
-# update), dipasang ulang. Dibatasi 6 percobaan supaya tidak mencoba selamanya.
-if [[ "$1" == "--ensure" ]]; then
-  jq -e '[.inbounds[]|select(.tag=="vless-reality")]|length > 0' $CFG >/dev/null 2>&1 && { rm -f $ASD/reality_try; exit 0; }
-  t=$(cat $ASD/reality_try 2>/dev/null); [[ "$t" =~ ^[0-9]+$ ]] || t=0
-  (( t >= 6 )) && exit 0
-  echo $((t+1)) > $ASD/reality_try
-  echo "$(date '+%F %T') inbound Reality tidak ada, coba pasang (percobaan $((t+1)))" >> $LOG
-  exec "$0" --restart
-fi
-
-port=$(cat $ASD/reality_port 2>/dev/null | tr -d '[:space:]')
-[[ "$port" =~ ^[0-9]+$ ]] && (( port > 0 && port < 65536 )) || port=2087
-dest=$(cat $ASD/reality_dest 2>/dev/null | tr -d '[:space:]')
-[[ "$dest" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || dest=www.asus.com
-echo "$port" > $ASD/reality_port; echo "$dest" > $ASD/reality_dest
-
-# kunci dibuat sekali saja dan tidak pernah diganti saat update
-if [[ ! -s $ASD/reality_priv || ! -s $ASD/reality_pub ]]; then
-  k=$(mktemp)
-  if openssl genpkey -algorithm X25519 -out "$k" 2>/dev/null; then
-    openssl pkey -in "$k" -outform DER        2>/dev/null | tail -c 32 | b64u > $ASD/reality_priv
-    openssl pkey -in "$k" -pubout -outform DER 2>/dev/null | tail -c 32 | b64u > $ASD/reality_pub
+# Reality sudah ditiadakan. Blok ini mencopot sisa-sisanya di VPS yang
+# dulu terpasang: inbound vless-reality dibuang dari config (dengan uji &
+# cadangan), lalu script/cron/berkas kuncinya ikut dihapus. VPS baru tidak
+# pernah punya Reality, jadi blok ini aman dijalankan berulang.
+if jq -e 'any(.inbounds[]?; .tag=="vless-reality")' $CFG >/dev/null 2>&1; then
+  cp -f $CFG $CFG.bak-delreality
+  # Nama berkas uji HARUS berakhiran .json: Xray menebak format config dari
+  # ekstensi berkas, jadi berkas *.tmp akan ditolak "failed to get format".
+  _rtmp="${CFG%.json}.delrt.json"
+  if jq '.inbounds = [ .inbounds[] | select(.tag != "vless-reality") ]' $CFG > "$_rtmp" \
+     && xray run -test -config "$_rtmp" >/dev/null 2>&1; then
+    mv "$_rtmp" $CFG
+    systemctl restart xray >/dev/null 2>&1
+    echo -e "${GRN}[REALITY] Inbound Reality dicopot, protokol lain tidak terpengaruh${NC}"
+  else
+    rm -f "$_rtmp"
+    echo -e "${YEL}[REALITY] Gagal mencopot inbound Reality dengan aman, dilewati${NC}"
   fi
-  rm -f "$k"
+  rm -f $CFG.bak-delreality
+  unset _rtmp
 fi
-priv=$(cat $ASD/reality_priv 2>/dev/null | tr -d '[:space:]')
-pub=$(cat $ASD/reality_pub 2>/dev/null | tr -d '[:space:]')
-sid=$(cat $ASD/reality_sid 2>/dev/null | tr -d '[:space:]')
-[[ "$sid" =~ ^[0-9a-f]{8}$ ]] || { sid=$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n'); echo "$sid" > $ASD/reality_sid; }
-
-if [[ ${#priv} -ne 43 || ${#pub} -ne 43 ]]; then
-  rm -f $ASD/reality_priv $ASD/reality_pub
-  echo "Kunci Reality gagal dibuat, Reality dilewati." >&2; exit 1
-fi
-[[ "$1" == "--keys" ]] && { printf 'port=%s\ndest=%s\npub=%s\nsid=%s\n' "$port" "$dest" "$pub" "$sid"; exit 0; }
-
-# WAJIB berakhiran .json: Xray menentukan format config dari akhiran nama file.
-# Tanpa itu: "core: Failed to get format of ..." walau isinya benar.
-tmp=$(mktemp --suffix=.json 2>/dev/null)
-[[ -n "$tmp" && -f "$tmp" ]] || { tmp=/tmp/cas-reality.$$.json; : > "$tmp"; }
-jq --argjson port "$port" --arg dest "$dest" --arg priv "$priv" --arg sid "$sid" '
-  ([.inbounds[]|select(.tag=="vless-ws")][0].settings.clients // []) as $cl
-  | .inbounds = [ .inbounds[] | select(.tag != "vless-reality") ]
-  | .inbounds += [{
-      tag: "vless-reality",
-      listen: "0.0.0.0",
-      port: $port,
-      protocol: "vless",
-      settings: { clients: $cl, decryption: "none" },
-      streamSettings: {
-        network: "tcp",
-        security: "reality",
-        realitySettings: {
-          show: false,
-          dest: ($dest + ":443"),
-          xver: 0,
-          serverNames: [ $dest ],
-          privateKey: $priv,
-          shortIds: [ "", $sid ]
-        }
-      },
-      sniffing: { enabled: true, destOverride: ["http","tls"] }
-    }]' $CFG > "$tmp" 2>/dev/null
-
-if [[ ! -s "$tmp" ]] || ! jq -e . "$tmp" >/dev/null 2>&1; then
-  rm -f "$tmp"; echo "Gagal menyusun config Reality, tidak ada yang diubah." >&2; exit 1
-fi
-# diuji sampai 2x: saat update berjalan pernah gagal sesaat padahal config benar
-ok=0
-for _try in 1 2; do
-  if xray run -test -config "$tmp" >>$LOG 2>&1; then ok=1; break; fi
-  echo "$(date '+%F %T') uji ke-$_try gagal" >> $LOG
-  sleep 2
-done
-if (( ok == 0 )); then
-  cp -f "$tmp" /tmp/cas-reality-gagal.json 2>/dev/null
-  rm -f "$tmp"
-  echo "Config Reality tidak lolos uji Xray. Pesan aslinya ada di $LOG" >&2
-  echo "Tidak ada yang diubah, protokol lain tetap normal." >&2
-  exit 1
-fi
-rm -f $ASD/reality_try
-if cmp -s "$tmp" "$CFG"; then rm -f "$tmp"; exit 0; fi      # tidak ada perubahan
-cp -f "$CFG" "$CFG.bak-reality"
-mv "$tmp" "$CFG"
-if [[ "$1" == "--restart" ]]; then
-  systemctl restart xray >/dev/null 2>&1; sleep 1
-  if ! systemctl is-active --quiet xray; then
-    cp -f "$CFG.bak-reality" "$CFG"; systemctl restart xray >/dev/null 2>&1
-    echo "Xray gagal start dengan Reality, config sudah dikembalikan." >&2; exit 1
-  fi
-fi
-exit 0
-EOF
-chmod +x /usr/local/sbin/cas-reality
-rm -f /etc/autoscript/reality_try   # tiap update memberi 6 kesempatan baru bagi cron --ensure
-# www.microsoft.com ternyata tidak bisa dipakai (rantai sertifikatnya terlalu
-# besar, jabat tangan tidak selesai). VPS yang masih memakainya dipindahkan.
-[[ "$(cat /etc/autoscript/reality_dest 2>/dev/null)" == "www.microsoft.com" ]] && echo "www.asus.com" > /etc/autoscript/reality_dest
-/usr/local/sbin/cas-reality || echo -e "${RED}Reality dilewati (lihat pesan di atas), protokol lain tidak terpengaruh.${NC}"
+# copot script, cron, logrotate, dan berkas state Reality
+rm -f /usr/local/sbin/cas-reality
+rm -f /etc/cron.d/cas-reality 2>/dev/null
+sed -i '\#/usr/local/sbin/cas-reality#d' /etc/crontab 2>/dev/null
+rm -f /etc/autoscript/reality_port /etc/autoscript/reality_dest \
+      /etc/autoscript/reality_priv /etc/autoscript/reality_pub \
+      /etc/autoscript/reality_sid /etc/autoscript/reality_try
+rm -f /var/log/cas-reality.log
 
 DOMAIN=$(cat /etc/autoscript/domain)
 cp -f /etc/nginx/conf.d/xray.conf /root/xray.conf.bak 2>/dev/null
@@ -1994,7 +1852,7 @@ EOF
 chmod +x /usr/local/sbin/cas-ssl-pending
 
 cat > /etc/logrotate.d/cassanova <<'EOF'
-/var/log/cas-ssl.log /var/log/cas-update.log /var/log/cas-reality.log {
+/var/log/cas-ssl.log /var/log/cas-update.log {
     weekly
     rotate 2
     maxsize 5M
@@ -2024,7 +1882,6 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 */2 * * * * root /usr/local/sbin/menu license
 */10 * * * * root /usr/local/sbin/cas-ssl-pending
 0 9 * * * root /usr/local/sbin/cas-license-warn
-*/10 * * * * root /usr/local/sbin/cas-reality --ensure
 EOF
 chmod 644 /etc/cron.d/autoscript
 
