@@ -1,3 +1,61 @@
+v1.33.0
+CEK CONFIG & CONVERT LINK
+- Check Config (menu tiap protokol, opsi 11) sekarang menampilkan AKUN LENGKAP
+  beserta semua link (WS/gRPC/Upgrade/XHTTP) persis seperti saat pertama
+  dibuat, ditambah baris Status & Terpakai/Kuota. Dulu hanya ringkasan.
+- BARU: "Cek Config Akun (semua protokol)" di menu All Protocol. Ketik satu
+  username -> tampil akunnya di SSH + VLESS + VMESS + TROJAN sekaligus, lengkap
+  dengan link tiap protokol. Protokol yang tidak punya user itu dilewati.
+- Ditambah mode baca-saja m-xray <proto> --show <user> (dipakai fitur di atas).
+- Convert link ditambahkan di bawah SETIAP output akun (layar & notifikasi
+  Telegram) untuk VLESS/VMESS/TROJAN, Hysteria2, dan All Protocol:
+    Sing-box   : https://singbox.cassanova.my.id/
+    Multi Akun : https://multi.cassanova.my.id/
+- Versi tetap memakai format semantik (mis. v1.33.0). Catatan: format versi
+  bertanggal seperti v26.09... TIDAK dipakai karena urutan tanggal-dulu
+  merusak deteksi update otomatis (sort -V membandingkan angka pertama dulu).
+
+HASIL UJI
+- Alur "Cek Config semua protokol" diuji dengan m-xray tiruan + DB tiruan:
+  SSH, VLESS, TROJAN tampil dengan link; protokol tanpa user dilewati benar.
+- Semua skrip (termasuk m-xray, m-all, m-hy2 yang di dalam heredoc) lolos bash -n.
+
+v1.32.0
+HYSTERIA2 - PROTOKOL MANDIRI (bypass langsung, TERPISAH dari All Protocol)
+- Ditambahkan modul Hysteria2 (biner resmi apernet) sebagai protokol berdiri
+  sendiri dengan menu khusus "HYSTERIA2" (nomor 10 di menu utama). SENGAJA
+  tidak digabung ke All Protocol maupun notifikasi gabungan, karena HY2 jalur
+  UDP langsung ke VPS (bypass), bukan lewat IP Cloudflare seperti WS/gRPC.
+- Menu m-hy2: Create / Renew / Delete / List / Tampilkan Link / Recovery.
+  Recovery 4 bulan, akun expired otomatis masuk Recovery (cron harian 00:10).
+- Auth memakai mode "command" (baca DB langsung), jadi tambah/hapus user
+  TIDAK perlu restart server - koneksi user lain tidak terganggu.
+- Link yang dihasilkan: hysteria2://<pass>@<domain>:<port>/?sni=<domain>...
+  Port default UDP 443 (TCP 443 tetap milik nginx, tidak bentrok).
+- TLS pakai sertifikat asli VPS (acme.sh). Saat SSL diperbarui, cas-hy2 ikut
+  di-restart otomatis lewat reloadcmd acme.
+- cekport menampilkan status UDP HY2; halaman Check Services menampilkan
+  status service cas-hy2; backup/restore VPS otomatis menyertakan akun HY2
+  (datanya di /etc/autoscript).
+- Probe Tahap 1 (cas-hy2-probe) kalau ada otomatis dibersihkan & diganti
+  server permanen.
+
+CATATAN PENTING
+- HY2 TIDAK cocok untuk bug Cloudflare/edukasi (CDN + TCP). Sudah diuji:
+  CF tidak meneruskan UDP, jadi bug CF mustahil lewat HY2. Untuk bug CF tetap
+  pakai VLESS/Trojan WS/gRPC/XHTTP. HY2 untuk kuota utama / lawan blokir /
+  kecepatan (QUIC tahan packet-loss).
+- Kuota & Limit-IP: kolomnya sudah ada di akun, penegakannya (poller
+  trafficStats) menyusul di versi berikutnya setelah koneksi per-user
+  terbukti di VPS.
+
+HASIL UJI (yang bisa diuji tanpa biner berjalan)
+- Skema config.yaml & link hysteria2:// tervalidasi.
+- Logika auth.sh diuji: user valid -> izinkan (cetak id); locked/expired/
+  password asing -> tolak, tercatat di /var/log/cas-hy2-auth.log.
+- Fungsi m-hy2 (list, link, hapus->recovery, expire) diuji dengan DB tiruan.
+- Semua skrip lolos bash -n.
+
 v1.31.0
 FAIL2BAN: PROTEKSI BRUTE-FORCE (mengisi celah nyata)
 - Temuan: fail2ban SUDAH terpasang di script lama, tapi tidak pernah diberi

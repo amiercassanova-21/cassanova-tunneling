@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.31.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.33.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -412,6 +412,10 @@ $(blk "⚡ <b>$UP GRPC</b>"                "$(mk_link grpc 1)")
 $(blk "🆙 <b>$UP UPGRADE TLS</b>"     "$(mk_link up 1)")
 $(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$xbl
 $BR
+🔁 <b>CONVERT LINK</b>
+Sing-box   : <code>https://singbox.cassanova.my.id/</code>
+Multi Akun : <code>https://multi.cassanova.my.id/</code>
+$BR
 🔎 <b>CEK MASA AKTIF</b>
 <code>https://$DOMAIN/cek</code>
 Buka link di atas, pilih $UP, lalu tempel $idlabel akun ini
@@ -448,6 +452,9 @@ $BR
   sec "$UP Upgrade TLS";     mk_link up 1
   sec "$UP Upgrade NO TLS";  mk_link up 0
   (( xhon )) && { sec "$UP XHTTP TLS"; mk_link xh 1; }
+  sec "CONVERT LINK"
+  echo -e " ${G}Sing-box   :${N} ${C}https://singbox.cassanova.my.id/${N}"
+  echo -e " ${G}Multi Akun :${N} ${C}https://multi.cassanova.my.id/${N}"
   sec "CEK MASA AKTIF"
   echo -e " ${C}https://$DOMAIN/cek${N}"
   echo
@@ -476,33 +483,20 @@ check_config(){
   echo -e " ${G}Pilih akun untuk melihat detail:${N}"
   echo
   pick_user all || { pause; return; }
-  local exp id ipl q st used pct left
-  exp=$(db_field $PROTO "$U" 2); id=$(db_field $PROTO "$U" 3)
-  ipl=$(db_field $PROTO "$U" 4); q=$(db_field $PROTO "$U" 5); st=$(db_field $PROTO "$U" 6)
+  # Tampilkan AKUN LENGKAP + semua link, persis seperti saat pertama dibuat.
+  local id exp st used q pct
+  id=$(db_field $PROTO "$U" 3); exp=$(db_field $PROTO "$U" 2)
+  st=$(db_field $PROTO "$U" 6); q=$(db_field $PROTO "$U" 5)
   used=$(usage_get $PROTO "$U")
-  local today0; today0=$(date -d "$(date +%F)" +%s)
-  left=$(( ( $(date -d "$exp" +%s 2>/dev/null || echo "$today0") - today0 ) / 86400 ))
-  local expinfo
-  if [[ "$exp" < "$(date +%F)" ]]; then expinfo="${R}EXPIRED ($(( -left )) hari lalu)${N}"
-  elif [[ $left -eq 0 ]]; then expinfo="${Y}habis hari ini${N}"
-  else expinfo="($left hari lagi)"; fi
-  header "DETAIL AKUN $UP"
-  printf " ${G}%-13s${N}: %b\n" "Username" "${Y}$U${N}"
-  printf " ${G}%-13s${N}: %b\n" "Protokol" "$UP"
+  show_account "$U" "$id" "$exp"
+  # ringkasan status & pemakaian di bawah akun (show_account tidak menghitung terpakai)
   printf " ${G}%-13s${N}: %b\n" "Status" "$(st_label "$st")"
-  printf " ${G}%-13s${N}: %b\n" "Expired" "${Y}$exp${N} $expinfo"
-  printf " ${G}%-13s${N}: %b\n" "Limit IP" "$([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")"
   if [[ "$q" == 0 || -z "$q" ]]; then
-    printf " ${G}%-13s${N}: %b\n" "Kuota" "$(hbytes $used) / Unlimited"
+    printf " ${G}%-13s${N}: %b\n" "Terpakai" "$(hbytes $used) / Unlimited"
   else
     pct=$(( used * 100 / (q * 1073741824) ))
-    printf " ${G}%-13s${N}: %b\n" "Kuota" "$(hbytes $used) / ${q} GB (${pct}%)"
+    printf " ${G}%-13s${N}: %b\n" "Terpakai" "$(hbytes $used) / ${q} GB (${pct}%)"
   fi
-  printf " ${G}%-13s${N}: %b\n" "$([[ $PROTO == trojan ]] && echo Password || echo id)" "$id"
-  echo -e "$LINE"
-  echo -e " ${G}Pelanggan bisa cek sendiri di:${N}"
-  echo -e " ${C}https://$DOMAIN/cek${N}"
-  echo -e " (pilih $UP, tempel $([[ $PROTO == trojan ]] && echo Password || echo id) di atas)"
   echo -e "$LINE"
   pause
 }
@@ -758,6 +752,22 @@ find_acc(){ # $1=kode  $2=file (default DB) -> cetak username
 }
 case "$2" in
   --add) QUICK=1; create 0; exit 0 ;;
+  # --show user : baca-saja, cetak baris OK|... + LINK|... untuk akun yang sudah
+  # ada. Dipakai "Cek Config All Protocol" agar bisa menggabung antar protokol.
+  --show)
+    su=$3; [[ -z "$su" ]] && { echo "ERR|user kosong"; exit 1; }
+    user_exists $PROTO "$su" || { echo "MISS|$su"; exit 0; }
+    REM=$su; ID=$(db_field $PROTO "$su" 3)
+    sexp=$(db_field $PROTO "$su" 2); sipl=$(db_field $PROTO "$su" 4); sq=$(db_field $PROTO "$su" 5)
+    echo "OK|$su|$ID|$sexp|$sipl|$sq"
+    printf 'LINK|%s WS TLS|%s\n'          "$UP" "$(mk_link ws 1)"
+    printf 'LINK|%s WS NON-TLS|%s\n'      "$UP" "$(mk_link ws 0)"
+    printf 'LINK|%s GRPC|%s\n'            "$UP" "$(mk_link grpc 1)"
+    printf 'LINK|%s UPGRADE TLS|%s\n'     "$UP" "$(mk_link up 1)"
+    printf 'LINK|%s UPGRADE NON-TLS|%s\n' "$UP" "$(mk_link up 0)"
+    { [[ $PROTO == vless && -f $ASD/xhttp_on ]] || [[ $PROTO == trojan && -f $ASD/xhttp_on_trojan ]]; } && \
+      printf 'LINK|%s XHTTP TLS|%s\n' "$UP" "$(mk_link xh 1)"
+    exit 0 ;;
   # --create user id durasi limitip kuota : dipakai "Create All Protocol".
   # durasi = angka (hari)  atau  angka diakhiri "m" (menit, untuk trial).
   # Keluarannya baris berpemisah "|" supaya mudah dibaca script lain.
@@ -1099,11 +1109,12 @@ while true; do
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "2.)" "VMESS" "7.)" "SET REDUCE/TIME"
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "3.)" "VLESS" "8.)" "SET BRAND NAME"
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "4.)" "TROJAN" "9.)" "CHECK SERVICES"
-  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "5.)" "SETUP BOT" "x.)" "EXIT"
+  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "5.)" "SETUP BOT" "10.)" "HYSTERIA2"
+  printf "${B}│${N} %-23s ${C}%-4s${N} %-16s\n" "" "x.)" "EXIT"
   bot
   echo
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-9 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-10 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     # Modul di bawah ini menangani Ctrl-C sendiri (kembali ke menunya masing-
@@ -1118,6 +1129,7 @@ while true; do
     8) m-brand ;;
     7) cas_run "set_bantime"; [[ $? == 97 ]] && { clear; exit 0; } ;;
     9) cas_run "running" ;;
+    10) m-hy2 ;;
     x|X) clear; exit 0 ;;
     *) echo -e "${R}Pilihan salah${N}"; sleep 1 ;;
   esac
@@ -1153,6 +1165,7 @@ add "BADVPN"   badvpn
 add "VMESS"    xray
 add "VLESS"    xray
 add "TROJAN"   xray
+add "HYSTERIA2" cas-hy2
 add "SlowDNS"  slowdns
 add "WEB"      nginx
 ROWS+=("HTTP" "$(port 80)" "HTTPS" "$(port 443)")
@@ -1199,17 +1212,19 @@ if [[ -z "$1" ]]; then
     echo -e " ${C}1.)${N}  Create Account"
     echo -e " ${C}2.)${N}  Trial Account"
     echo -e " ${C}3.)${N}  Hapus Semua Akun Trial"
-    echo -e " ${C}4.)${N}  Back to Features"
+    echo -e " ${C}4.)${N}  Cek Config Akun (semua protokol)"
+    echo -e " ${C}5.)${N}  Back to Features"
     echo -e " ${C}x.)${N}  Exit"
     echo -e "$LINE\n"
     trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-    read -rp "$(echo -e "${G}Select From Options [1-4 or x] : ${N}")" _o
+    read -rp "$(echo -e "${G}Select From Options [1-5 or x] : ${N}")" _o
     trap ':' INT
     case $_o in
       1) cas_run "$0" --create ;;
       2) cas_run "$0" --trial ;;
       3) cas_run "$0" --deltrial ;;
-      4) exit 0 ;;
+      4) cas_run "$0" --check ;;
+      5) exit 0 ;;
       # 97 = minta menu pemanggil ikut keluar sampai ke shell
       x|X) clear; exit 97 ;;
       *) echo -e "${R}Pilihan salah${N}"; sleep 1 ;;
@@ -1218,6 +1233,51 @@ if [[ -z "$1" ]]; then
 fi
 
 # -----------------------------------------------------------------------
+# Cek config satu username di SEMUA protokol sekaligus (SSH+VLESS+VMESS+TROJAN)
+# -----------------------------------------------------------------------
+if [[ "$1" == --check ]]; then
+  header "CEK CONFIG AKUN (SEMUA PROTOKOL)"
+  read -rp "Username : " CU
+  [[ -z "$CU" ]] && exit 0
+  found=0
+  # SSH (password tidak tersimpan, jadi hanya info sambungan)
+  if awk -v u="$CU" '$1==u{f=1}END{exit !f}' $ASD/db/ssh.db 2>/dev/null; then
+    found=1
+    sexp=$(awk -v u="$CU" '$1==u{print $2}' $ASD/db/ssh.db)
+    sipl=$(awk -v u="$CU" '$1==u{print $3}' $ASD/db/ssh.db)
+    sec "SSH / OPENVPN"
+    echo -e " Username : ${Y}$CU${N}"
+    echo -e " Expired  : $sexp"
+    echo -e " Limit IP : $([[ "$sipl" == 0 || -z "$sipl" ]] && echo Unlimited || echo "$sipl IP")"
+    echo -e " Host     : $DOMAIN  (OpenSSH 22 · Dropbear 143/109 · WS 80/443 /ssh-ws)"
+    echo -e " Format   : $DOMAIN:22@$CU:<password>"
+  fi
+  # Xray protokol
+  for _p in vless vmess trojan; do
+    out=$(/usr/local/sbin/m-xray "$_p" --show "$CU" 2>/dev/null)
+    grep -q '^OK|' <<< "$out" || continue
+    found=1
+    IFS='|' read -r _ ou oid oexp oipl oq <<< "$(grep '^OK|' <<< "$out")"
+    sec "${_p^^}"
+    echo -e " Username : ${Y}$ou${N}"
+    echo -e " $([[ $_p == trojan ]] && echo Password || echo id)      : $oid"
+    echo -e " Expired  : $oexp   Limit IP: $([[ "$oipl" == 0 ]] && echo Unlimited || echo "$oipl")   Kuota: $([[ "$oq" == 0 ]] && echo Unlimited || echo "$oq GB")"
+    while IFS='|' read -r t lbl val; do
+      [[ "$t" == LINK ]] || continue
+      echo -e " ${G}$lbl${N}"; echo "  $val"
+    done <<< "$out"
+  done
+  (( found == 0 )) && echo -e "\n ${R}Username '$CU' tidak ditemukan di protokol mana pun.${N}"
+  sec "CONVERT LINK"
+  echo -e " Sing-box   : ${C}https://singbox.cassanova.my.id/${N}"
+  echo -e " Multi Akun : ${C}https://multi.cassanova.my.id/${N}"
+  sec "CEK MASA AKTIF"
+  echo -e " ${C}https://$DOMAIN/cek${N}"
+  echo -e "$LINE"
+  read -rp "$(echo -e "${P}Tekan Enter...${N}")"
+  exit 0
+fi
+
 # Hapus semua akun trial sekaligus (tidak perlu satu-satu tiap protokol)
 # -----------------------------------------------------------------------
 if [[ "$1" == --deltrial ]]; then
@@ -1373,6 +1433,9 @@ for blok in "$OUT_VL" "$OUT_VM" "$OUT_TR"; do
     sec "$lbl"; echo "$val"
   done <<< "$blok"
 done
+sec "CONVERT LINK"
+echo "Sing-box   : https://singbox.cassanova.my.id/"
+echo "Multi Akun : https://multi.cassanova.my.id/"
 sec "CEK MASA AKTIF"
 echo "https://$DOMAIN/cek"
 if (( TRIAL )); then
@@ -1406,6 +1469,10 @@ $( (( TRIAL )) && printf '%-11s: %s' "Masa Trial" "$EXPLAB" || printf '%-11s: %s
 $L
 🔐 <b>SSH / OPENVPN</b>
 <pre>$(awk -F'|' '/^INFO\|/{printf "%-13s: %s\n",$2,$3}' <<< "$OUT_SSH")</pre>
+$L
+🔁 <b>CONVERT LINK</b>
+Sing-box   : <code>https://singbox.cassanova.my.id/</code>
+Multi Akun : <code>https://multi.cassanova.my.id/</code>
 $L
 🔎 <b>CEK MASA AKTIF</b>
 <code>https://$DOMAIN/cek</code>
@@ -1840,7 +1907,7 @@ fi
 
 /root/.acme.sh/acme.sh --install-cert -d "$D" --ecc \
   --fullchain-file $ASD/xray.crt --key-file $ASD/xray.key \
-  --reloadcmd "systemctl reload nginx" >>$LOG 2>&1
+  --reloadcmd "systemctl reload nginx; systemctl is-active --quiet cas-hy2 && systemctl restart cas-hy2" >>$LOG 2>&1
 
 if openssl x509 -in $ASD/xray.crt -noout -checkend 86400 >/dev/null 2>&1; then
   rm -f $ASD/ssl_pending $ASD/ssl_try $ASD/ssl_last $ASD/ssl_wait $ASD/ssl_orange
@@ -1896,6 +1963,9 @@ grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu i
 # ---- Modul SSH ----
 echo -e "${GRN}[SSH] Memasang modul SSH...${NC}"
 wget -qO /root/ssh.sh "$BASE/ssh.sh?t=$(date +%s)" && bash /root/ssh.sh; rm -f /root/ssh.sh
+# ---- Modul Hysteria2 (mandiri, terpisah dari All Protocol) ----
+echo -e "${GRN}[HY2] Memasang modul Hysteria2...${NC}"
+wget -qO /root/hy2.sh "$BASE/hy2.sh?t=$(date +%s)" && bash /root/hy2.sh; rm -f /root/hy2.sh
 
 # ---- Modul Features + Brand Name ----
 echo -e "${GRN}[FEATURES] Memasang modul Features & Brand Name...${NC}"

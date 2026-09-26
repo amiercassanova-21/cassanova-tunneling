@@ -55,7 +55,7 @@ do_update(){ # $1 = auto(1/0) ; return 0 sukses
   cd / && zip -rq "$bk" etc/autoscript usr/local/lib/autoscript usr/local/etc/xray/config.json \
     etc/nginx/conf.d usr/local/sbin/menu usr/local/sbin/m-xray usr/local/sbin/m-ssh usr/local/sbin/m-feature \
     usr/local/sbin/m-brand usr/local/sbin/m-bot usr/local/sbin/running usr/local/sbin/xray-guard \
-    usr/local/sbin/cas-update usr/local/bin/ws-ssh.py etc/cron.d 2>/dev/null
+    usr/local/sbin/cas-update usr/local/sbin/m-hy2 usr/local/bin/ws-ssh.py etc/hysteria etc/cron.d 2>/dev/null
   # 2) unduh & cek sintaks
   if ! wget -qO $tmp/update.sh "$BASE/update.sh?t=$(date +%s)" || [[ ! -s $tmp/update.sh ]] || ! bash -n $tmp/update.sh; then
     echo "Gagal unduh / file update rusak, update dibatalkan"; return 1
@@ -404,7 +404,7 @@ restore_info(){ # $1 = file zip -> set RB_DOMAIN RB_IP RB_DATE RB_ACC
   RB_IP=$(unzip -p "$f" etc/autoscript/ipinfo.json 2>/dev/null | jq -r '.ip // empty' 2>/dev/null)
   RB_DATE=$(unzip -l "$f" 2>/dev/null | awk '$NF=="etc/autoscript/domain"{print $2" "$3; exit}')
   RB_ACC=""
-  for p in vless vmess trojan ssh; do
+  for p in vless vmess trojan ssh hy2; do
     c=$(unzip -p "$f" etc/autoscript/db/$p.db 2>/dev/null | grep -c .)
     RB_ACC+="${p^^} ${c:-0}  "
   done
@@ -786,6 +786,16 @@ cek_port(){
   echo -e "$LINE"
   echo -e " ${G}Terbuka : ${Y}$ok${N}   ${G}Bermasalah : ${Y}$bad${N}"
   echo -e "$LINE"
+  # Hysteria2 memakai UDP (bukan TCP), jadi dicek terpisah
+  local hp; hp=$(cat $ASD/hy2_port 2>/dev/null | tr -d '[:space:]')
+  if [[ "$hp" =~ ^[0-9]+$ ]] && systemctl is-active --quiet cas-hy2 2>/dev/null; then
+    if ss -lun 2>/dev/null | awk '{print $5}' | sed "s/.*://" | grep -qx "$hp"; then
+      printf " %-6s %-18s ${G}terbuka${N}\n" "$hp/udp" "HYSTERIA2 (UDP)"
+    else
+      printf " %-6s %-18s ${R}TIDAK jalan${N}\n" "$hp/udp" "HYSTERIA2 (UDP)"
+    fi
+    echo -e "$LINE"
+  fi
   echo -e " ${Y}Port internal (hanya lokal, tidak dibuka ke internet):${N}"
   local intl; intl=$(ss -Hltn 2>/dev/null | awk '$4 ~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | sed 's/.*://' | sort -un | tr '\n' ' ')
   echo -e "  ${intl:-"-"}"
