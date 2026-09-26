@@ -1,3 +1,26 @@
+v1.42.0
+UPDATESC: TAMPILAN PANEL BERBINGKAI (MODERN)
+- Progress update kini berupa panel kotak yang diperbarui di tempat:
+    ╭── Cassanova Update ─────────────────────────╮
+    │   v1.41.0  →  v1.42.0                       │
+    │   ⠹  Modul SSH                              │
+    │   ██████████████████▎░░░░░   76%            │
+    ╰─────────────────────────────────────────────╯
+- Bar memakai blok mulus dengan pecahan sub-karakter (▏▎▍▌▋▊▉) + spinner
+  braille; bingkai ungu, bar cyan, langkah kuning, spinner hijau.
+- Detail lengkap tetap disimpan ke /var/log/cas-update.log (via tee).
+- Error kuat (Config Xray tidak valid, Traceback, FATAL) tetap dimunculkan
+  merah di bawah panel, tidak tersembunyi.
+- Auto-update (cron) tetap senyap penuh ke log, tidak berubah.
+- Catatan: panel baru muncul mulai update BERIKUTNYA setelah v1.42.0 terpasang
+  (updatesc yang sedang berjalan masih pakai tampilan versi lama).
+
+HASIL UJI
+- Perataan diverifikasi: semua baris panel = 47 kolom tampilan (border atas,
+  konten, border bawah), termasuk karakter multibyte (blok/braille/panah).
+- Frame 76% menampilkan partial block ▎ dengan benar; frame 100% -> "Selesai".
+- Diuji dari features.sh hasil splice. Lolos bash -n.
+
 v1.41.0
 TAMPILAN AWAL: TAMBAH BARIS HYSTERIA DI LIST ACCOUNTS
 - Di layar awal (LIST ACCOUNTS), ditambah baris "HYSTERIA" tepat di bawah TROJAN,

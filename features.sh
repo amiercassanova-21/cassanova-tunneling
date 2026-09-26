@@ -41,11 +41,48 @@ newer(){ [[ -n "$1" && "$1" != "$2" && "$(printf '%s\n%s\n' "${1#v}" "${2#v}" | 
 # Progress bar animasi untuk update manual: baca output update.sh dari stdin,
 # tampilkan SATU baris bar yang jalan di tempat. Output lengkap tetap ke $LOG
 # (lewat tee sebelum pipe ini). Baris error tetap dimunculkan agar tidak hilang.
-cas_progress(){ # arg1 = versi asal, arg2 = versi tujuan
+cas_progress(){ # arg1 = versi asal, arg2 = versi tujuan  (Gaya B: panel berbingkai)
   awk -v FROM="$1" -v TO="$2" '
-    function bar(p,   i,f,s){ f=int(p/5); s="["; for(i=0;i<20;i++) s=s (i<f?"#":"."); return s "]" }
-    function draw(p,l){ printf "\r\033[36m%s\033[0m %3d%%  \033[33m%-30s\033[0m\033[K", bar(p), p, l; fflush() }
-    BEGIN{ pct=0; printf "\033[36mCassanova Update\033[0m  %s \342\206\222 %s\n", FROM, TO; draw(0,"mulai...") }
+    function rep(ch,n,  s,i){ s=""; for(i=0;i<n;i++) s=s ch; return s }
+    # bar 24 sel dengan pecahan sub-karakter; terisi cyan, sisa redup
+    function barstr(p,  cells,eighths,full,r,s,i){
+      cells=24; eighths=int(p/100*cells*8 + 0.5)
+      full=int(eighths/8); r=eighths%8
+      s=CY rep("\342\226\210",full)
+      if(r>0){ s=s blk[r]; used=full+1 } else used=full
+      s=s DIM rep("\342\226\221", cells-used) NC
+      return s
+    }
+    function line(content,cols,  pad){ pad=W-cols; if(pad<0)pad=0; printf "%s\342\224\202%s%*s%s\342\224\202%s\n", BC, content, pad, "", BC, NC }
+    function redraw(p,l,  vcols,scols,bcols,lab){
+      if(drawn) printf "\033[4A"
+      # baris versi
+      vcols=3+length(FROM)+5+length(TO)
+      line(sprintf("   %s%s%s  \342\206\222  %s%s%s", Wc,FROM,NC, Wc,TO,NC), vcols)
+      # baris spinner + langkah
+      lab=l; if(length(lab)>W-6) lab=substr(lab,1,W-6)
+      spin=(spin%10)+1
+      scols=3+1+2+length(lab)
+      line(sprintf("   %s%s%s  %s%s%s", GR,fr[spin],NC, Yc,lab,NC), scols)
+      # baris bar + persen
+      bcols=3+24+2+4
+      line(sprintf("   %s  %s%3d%%%s", barstr(p), Wc,p,NC), bcols)
+      # baris bawah (border)
+      printf "%s\342\225\260%s\342\225\257%s\n", BC, rep("\342\224\200",W), NC
+      drawn=1; fflush()
+    }
+    BEGIN{
+      W=45
+      BC="\033[35m"; CY="\033[36m"; DIM="\033[38;5;240m"; Yc="\033[33m"; GR="\033[32m"; Wc="\033[1;97m"; NC="\033[0m"
+      split("\342\240\213|\342\240\231|\342\240\271|\342\240\270|\342\240\274|\342\240\264|\342\240\246|\342\240\247|\342\240\207|\342\240\217", fr, "|")
+      split("\342\226\217|\342\226\216|\342\226\215|\342\226\214|\342\226\213|\342\226\212|\342\226\211|\342\226\210", blk, "|")
+      spin=0; pct=0; drawn=0; broke=0
+      # border atas dengan judul
+      title=" Cassanova Update "
+      printf "%s\342\225\255\342\224\200\342\224\200%s%s\342\225\256%s\n", BC, title, rep("\342\224\200", W-2-length(title)), NC
+      # catatan: length(title) menghitung byte; judul ASCII jadi = kolom
+      redraw(0,"mulai...")
+    }
     {
       np=pct; lb="";
       if ($0 ~ /\[1\/7\]/)       {np=10; lb="Paket tambahan"}
@@ -61,11 +98,18 @@ cas_progress(){ # arg1 = versi asal, arg2 = versi tujuan
       else if ($0 ~ /\[BOT/)     {np=95; lb="Modul Setup Bot"}
       else if ($0 ~ /XHTTP\]/)   {np=97; lb="XHTTP"}
       else if ($0 ~ /UPDATE SELESAI/) {np=100; lb="Selesai"}
-      if (np>pct){ pct=np; draw(pct,lb) }
-      # error kuat tetap dimunculkan (jangan sampai tersembunyi bar)
-      if ($0 ~ /Traceback|FATAL|tidak valid|tidak didukung|[Ee]rror:/) printf "\n\033[31m%s\033[0m\n", $0
+      if (np>pct){ pct=np; lastlb=lb; redraw(pct,lb) }
+      if ($0 ~ /Traceback|FATAL|tidak valid|tidak didukung|[Ee]rror:/){ printf "\n\033[31m%s\033[0m\n", $0; drawn=0 }
     }
-    END{ if(pct>=100) printf "\r\033[36m%s\033[0m 100%%  \033[32mSelesai \342\234\223\033[0m\033[K\n", bar(100); else printf "\n" }'
+    END{
+      if(pct>=100){ if(drawn) printf "\033[4A"; 
+        # baris versi
+        line(sprintf("   %s%s%s  \342\206\222  %s%s%s", Wc,FROM,NC, Wc,TO,NC), 3+length(FROM)+5+length(TO));
+        line(sprintf("   %s\342\234\223%s  %sSelesai%s", GR,NC, GR,NC), 3+1+2+7);
+        line(sprintf("   %s  %s100%%%s", barstr(100), Wc,NC), 3+24+2+4);
+        printf "%s\342\225\260%s\342\225\257%s\n", BC, rep("\342\224\200",W), NC
+      } else printf "\n"
+    }'
 }
 
 tg(){ # kirim pesan ke bot owner VPS (jika ada)
