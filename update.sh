@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.39.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.40.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -89,6 +89,12 @@ db_field(){ awk -v u="$2" -v f="$3" '$1==u{print $f}' "$ASD/db/$1.db"; }
 db_set(){ awk -v u="$2" -v f="$3" -v v="$4" '$1==u{$f=v}1' "$ASD/db/$1.db" > "$ASD/db/.$1.tmp" && mv "$ASD/db/.$1.tmp" "$ASD/db/$1.db"; }
 db_del(){ awk -v u="$2" '$1!=u' "$ASD/db/$1.db" > "$ASD/db/.$1.tmp" && mv "$ASD/db/.$1.tmp" "$ASD/db/$1.db"; }
 user_exists(){ [[ -n "$(db_get $1 "$2")" ]]; }
+
+# Buat user sistem untuk akun tunnel. Kalau nama bentrok dengan GRUP sistem yang
+# sudah ada (mis. "admin", "users"), useradd gagal (exit 9) karena mau membuat
+# grup senama. Diulang dengan -N (tanpa grup senama; user masuk grup default).
+# Nama normal tetap lewat jalur pertama, jadi perilaku lama tidak berubah.
+sys_useradd(){ useradd "$@" 2>/dev/null && return 0; useradd -N "$@" 2>/dev/null; }
 
 # ---- Registry AKUN ALL PROTOCOL ----
 # all.db    : akun all-protocol yang aktif      -> "user uuid"

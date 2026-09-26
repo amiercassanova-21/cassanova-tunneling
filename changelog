@@ -1,3 +1,24 @@
+v1.40.0
+FIX: GAGAL BUAT AKUN SSH SAAT USERNAME BENTROK GRUP SISTEM
+- Masalah: membuat akun (mis. All Protocol / SSH) dengan username yang sama
+  dengan GRUP sistem bawaan VPS (contoh: "admin", "users", "staff") gagal:
+    "Gagal membuat SSH: gagal membuat user sistem"
+  Sebab: useradd default mencoba membuat grup senama; kalau grup itu sudah ada,
+  useradd berhenti (exit 9), sehingga pembuatan akun dibatalkan (rollback).
+- Perbaikan: pembuatan user sistem kini punya fallback. Kalau jalur normal gagal
+  karena bentrok grup, otomatis diulang dengan "useradd -N" (tanpa membuat grup
+  senama; user masuk grup default "users"). Untuk akun tunnel (-s /bin/false -M)
+  grup tidak berpengaruh apa pun (login/SSH-WS/Dropbear/limit-IP tetap normal).
+- Perilaku username normal TIDAK berubah: tetap lewat jalur pertama dan tetap
+  mendapat grup privat sendiri. Hanya nama yang bentrok grup yang diselamatkan.
+- Berlaku untuk semua pembuatan SSH: Create, Trial, Recovery, dan Create All
+  Protocol (yang membuat SSH di dalamnya).
+
+HASIL UJI
+- Dengan useradd asli: grup "admin" dibuat lalu "m-ssh ssh --create admin ..."
+  -> BERHASIL (user admin, grup users). Username normal "budi2" tetap dapat
+  grup privat budi2 (perilaku lama utuh). Lolos bash -n.
+
 v1.39.0
 ALL PROTOCOL: MENU KELOLA LENGKAP + PEMISAHAN DARI MENU LAIN
 - Menu All Protocol kini punya fungsi kelola penuh, semuanya HANYA untuk akun

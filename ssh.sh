@@ -387,7 +387,7 @@ create(){
   read -rp "Masa aktif (hari) : " d; num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
   read -rp "Limit IP (0 = unlimited) [0] : " ipl; ipl=${ipl:-0}; num_ok "$ipl" || { msg "${R}Harus angka${N}"; return; }
   exp=$(date -d "+$d days" +%F)
-  useradd -e "$exp" -s /bin/false -M "$u" 2>/dev/null
+  sys_useradd -e "$exp" -s /bin/false -M "$u"
   echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
   lock_db; echo "$u $exp $ipl active" >> "$DB"; unlock_db
   show_account "$u" "$p" "$exp" "$ipl" notif; pause
@@ -399,7 +399,7 @@ trial(){
   b=$(brand_txt); [[ "$(cat $ASD/brand_uuid 2>/dev/null)" == on && -n "$b" ]] && p="${b}-${p}"
   read -rp "Durasi trial (menit) [60] : " m; m=${m:-60}; num_ok "$m" || { msg "${R}Harus angka${N}"; return; }
   exp=$(date -d "+$m minutes" +%F)
-  useradd -s /bin/false -M "$u" 2>/dev/null; echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
+  sys_useradd -s /bin/false -M "$u"; echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
   lock_db; echo "$u $exp 1 active" >> "$DB"; unlock_db
   echo "/usr/local/sbin/m-ssh ssh --delete $u" | at now + $m minutes >/dev/null 2>&1
   show_account "$u" "$p" "$m menit" 1 notif; pause
@@ -485,7 +485,7 @@ recovery(){
   read -rp "Masa aktif baru (hari) : " d; num_ok "$d" || { msg "${R}Harus angka${N}"; return; }
   read -rp "Limit IP (0 = unlimited) [$ipl] : " v; v=${v:-$ipl}; num_ok "$v" && ipl=$v
   new=$(date -d "+$d days" +%F)
-  useradd -e "$new" -s /bin/false -M "$u" 2>/dev/null; echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
+  sys_useradd -e "$new" -s /bin/false -M "$u"; echo -e "$p\n$p" | passwd "$u" >/dev/null 2>&1
   lock_db; echo "$u $new $ipl active" >> "$DB"; awk -v u="$u" '$1!=u' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"; unlock_db
   show_account "$u" "$p" "$new" "$ipl" quote "SSH Dipulihkan"; pause
 }
@@ -512,8 +512,8 @@ if [[ "$2" == "--create" ]]; then
   if (( cmin > 0 )); then cexp=$(date -d "+$cmin minutes" +%F); else cexp=$(date -d "+$cdy days" +%F); fi
   # user sistem trial jangan dikunci tanggal (kadaluarsa diurus "at"), sama
   # seperti menu Trial biasa; kalau dikunci hari ini, login bisa langsung gagal.
-  if (( cmin > 0 )); then useradd -s /bin/false -M "$cu" 2>/dev/null || { echo "ERR|gagal membuat user sistem"; exit 1; }
-  else useradd -e "$cexp" -s /bin/false -M "$cu" 2>/dev/null || { echo "ERR|gagal membuat user sistem"; exit 1; }; fi
+  if (( cmin > 0 )); then sys_useradd -s /bin/false -M "$cu" || { echo "ERR|gagal membuat user sistem"; exit 1; }
+  else sys_useradd -e "$cexp" -s /bin/false -M "$cu" || { echo "ERR|gagal membuat user sistem"; exit 1; }; fi
   printf '%s\n%s\n' "$cp" "$cp" | passwd "$cu" >/dev/null 2>&1
   lock_db; echo "$cu $cexp $cipl active" >> "$DB"; unlock_db
   (( cmin > 0 )) && echo "/usr/local/sbin/m-ssh ssh --delete $cu" | at now + $cmin minutes >/dev/null 2>&1
