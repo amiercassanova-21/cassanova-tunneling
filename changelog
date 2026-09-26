@@ -1,3 +1,19 @@
+v1.43.0
+MONITOR: btop OTOMATIS TERPASANG + PERINTAH "cekvps"
+- btop kini ikut terpasang otomatis saat install VPS (dan saat updatesc),
+  jadi tidak perlu "apt install btop" manual. Cukup ketik: btop
+- Perintah baru "cekvps": monitor ringkas 1 layar (gaya box SC), berisi:
+    CPU % + bar + jumlah core, Load average, RAM, Swap, Disk /,
+    Uptime, Trafik realtime (▼ unduh / ▲ unggah), koneksi aktif,
+    dan ringkasan jumlah akun (SSH/VLESS/VMESS/TROJAN/HYSTERIA).
+  Warna otomatis: hijau (aman) < 70%, kuning >= 70%, merah >= 90%.
+- "cekvps live" = mode realtime (perbarui terus, Ctrl-C untuk keluar).
+
+HASIL UJI
+- cekvps diuji di lingkungan nyata: CPU dihitung dari /proc/stat, RAM/Swap dari
+  free, disk dari df, trafik dari /sys/class/net (sampel 1 dtk), koneksi dari ss.
+  Aman bila swap 0 atau vnstat tak ada. Lolos bash -n (features.sh & install.sh).
+
 v1.42.0
 UPDATESC: TAMPILAN PANEL BERBINGKAI (MODERN)
 - Progress update kini berupa panel kotak yang diperbarui di tempat:

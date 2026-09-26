@@ -6,7 +6,7 @@ GRN='\e[32m'; RED='\e[31m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 export DEBIAN_FRONTEND=noninteractive
 ASD=/etc/autoscript
-apt install -y speedtest-cli zip unzip >/dev/null 2>&1
+apt install -y speedtest-cli zip unzip btop >/dev/null 2>&1
 
 # =====================================================
 #  UPDATE SCRIPT
@@ -271,6 +271,64 @@ cat > /usr/local/sbin/restore <<'EOF'
 exec /usr/local/sbin/m-feature --restore "$1"
 EOF
 chmod +x /usr/local/sbin/restore
+
+# jalan pintas: ketik  cekvps  (monitor ringkas 1 layar; "cekvps live" utk realtime)
+cat > /usr/local/sbin/cekvps <<'EOF'
+#!/bin/bash
+. /usr/local/lib/autoscript/lib.sh 2>/dev/null
+[[ -z "$G" ]] && { R='\e[31m';G='\e[32m';Y='\e[33m';B='\e[34m';C='\e[36m';P='\e[35m';W='\e[1;97m';N='\e[0m'; ASD=/etc/autoscript; }
+DOMAIN=$(cat $ASD/domain 2>/dev/null); [[ -z "$DOMAIN" ]] && DOMAIN=$(hostname)
+IN="────────────────────────────────────"
+bar(){ local p=$1 w=14 f i s=""; f=$((p*w/100)); ((f>w))&&f=w; ((f<0))&&f=0
+  for((i=0;i<w;i++)); do ((i<f))&&s="${s}#"||s="${s}."; done; echo "$s"; }
+clr(){ local p=$1; ((p>=90))&&{ echo "$R";return;}; ((p>=70))&&{ echo "$Y";return;}; echo "$G"; }
+hb(){ numfmt --to=iec --suffix=B/s "$1" 2>/dev/null||echo "${1}B/s"; }
+ac(){ local f=$ASD/db/$1.db; [[ -f $f ]] && grep -c . "$f" 2>/dev/null||echo 0; }
+render(){
+  local a1 b1 c1 d1 e1 f1 g1 h1 a2 b2 c2 d2 e2 f2 g2 h2
+  read -r _ a1 b1 c1 d1 e1 f1 g1 h1 _ </proc/stat; local T1=$((a1+b1+c1+d1+e1+f1+g1+h1)) I1=$((d1+e1))
+  sleep 0.4
+  read -r _ a2 b2 c2 d2 e2 f2 g2 h2 _ </proc/stat; local T2=$((a2+b2+c2+d2+e2+f2+g2+h2)) I2=$((d2+e2))
+  local DT=$((T2-T1)); ((DT<=0))&&DT=1; local CPU=$(((100*(DT-(I2-I1)))/DT)) CORE=$(nproc)
+  local LAV=$(cut -d' ' -f1-3 /proc/loadavg)
+  local MT MU MP ST SU SP
+  read MT MU < <(free -m|awk '/^Mem:/{print $2,$3}'); MP=$((MU*100/MT))
+  read ST SU < <(free -m|awk '/^Swap:/{print $2,$3}'); SP=0; ((ST>0))&&SP=$((SU*100/ST))
+  local DU DTT DP; DU=$(df -h /|awk 'NR==2{print $3}'); DTT=$(df -h /|awk 'NR==2{print $2}'); DP=$(df /|awk 'NR==2{gsub("%","",$5);print $5}')
+  local UPT=$(uptime -p 2>/dev/null|sed 's/^up //'); [[ -z "$UPT" ]] && UPT=$(uptime|awk -F, '{print $1}')
+  local IF=$(ip route 2>/dev/null|awk '/^default/{print $5;exit}'); IF=${IF:-eth0}
+  local RX1=$(cat /sys/class/net/$IF/statistics/rx_bytes 2>/dev/null||echo 0) TX1=$(cat /sys/class/net/$IF/statistics/tx_bytes 2>/dev/null||echo 0)
+  sleep 1
+  local RX2=$(cat /sys/class/net/$IF/statistics/rx_bytes 2>/dev/null||echo 0) TX2=$(cat /sys/class/net/$IF/statistics/tx_bytes 2>/dev/null||echo 0)
+  local DL=$(hb $((RX2-RX1))) UL=$(hb $((TX2-TX1)))
+  local CON=$(ss -tun state established 2>/dev/null|grep -c .)
+  local AS=$(ac ssh) AV=$(ac vless) AM=$(ac vmess) AT=$(ac trojan) AH=$(ac hy2)
+  local TOT=$((AS+AV+AM+AT+AH))
+  clear 2>/dev/null
+  echo -e "${B}┌${IN}┐${N}"
+  echo -e "${B}│${N}  ${W}CEK VPS${N}  ·  ${C}$(date '+%H:%M:%S')${N}"
+  echo -e "${B}│${N}  ${C}$DOMAIN${N}"
+  echo -e "${B}├${IN}┤${N}"
+  printf "${B}│${N}  ${G}%-8s${N}: $(clr $CPU)%3s%%${N} [$(clr $CPU)%s${N}] ${C}%s core${N}\n" "CPU" "$CPU" "$(bar $CPU)" "$CORE"
+  printf "${B}│${N}  ${G}%-8s${N}: ${C}%s${N}\n" "Load" "$LAV"
+  printf "${B}│${N}  ${G}%-8s${N}: $(clr $MP)%3s%%${N} [$(clr $MP)%s${N}] ${C}%s/%s MB${N}\n" "RAM" "$MP" "$(bar $MP)" "$MU" "$MT"
+  printf "${B}│${N}  ${G}%-8s${N}: $(clr $SP)%3s%%${N} [$(clr $SP)%s${N}] ${C}%s/%s MB${N}\n" "Swap" "$SP" "$(bar $SP)" "$SU" "$ST"
+  printf "${B}│${N}  ${G}%-8s${N}: $(clr $DP)%3s%%${N} [$(clr $DP)%s${N}] ${C}%s/%s${N}\n" "Disk /" "$DP" "$(bar $DP)" "$DU" "$DTT"
+  echo -e "${B}├${IN}┤${N}"
+  printf "${B}│${N}  ${G}%-8s${N}: ${Y}%s${N}\n" "Uptime" "$UPT"
+  printf "${B}│${N}  ${G}%-8s${N}: ${C}▼ %s   ▲ %s${N}\n" "Trafik" "$DL" "$UL"
+  printf "${B}│${N}  ${G}%-8s${N}: ${Y}%s${N} koneksi aktif\n" "Koneksi" "$CON"
+  printf "${B}│${N}  ${G}%-8s${N}: ${Y}%s${N} ${B}(S:%s V:%s M:%s T:%s H:%s)${N}\n" "Akun" "$TOT" "$AS" "$AV" "$AM" "$AT" "$AH"
+  echo -e "${B}└${IN}┘${N}"
+}
+if [[ "$1" == live || "$1" == -l ]]; then
+  trap 'echo; exit 0' INT
+  while true; do render; echo -e " ${Y}mode live · tekan Ctrl-C untuk keluar${N}"; done
+else
+  render
+fi
+EOF
+chmod +x /usr/local/sbin/cekvps
 
 # jalan pintas: ketik  cekport
 cat > /usr/local/sbin/cekport <<'EOF'

@@ -42,13 +42,13 @@ export DEBIAN_FRONTEND=noninteractive
 mkdir -p /etc/autoscript/db /var/log/xray /var/www/html
 echo "$DOMAIN" > /etc/autoscript/domain
 echo "$BRAND"  > /etc/autoscript/brand
-echo "v1.42.0"  > /etc/autoscript/version
+echo "v1.43.0"  > /etc/autoscript/version
 touch /etc/autoscript/db/vless.db /etc/autoscript/db/vmess.db /etc/autoscript/db/trojan.db
 
 # ---------- Paket dasar ----------
 echo -e "${GRN}[1/6] Install paket dasar...${NC}"
 apt update -y
-apt install -y curl wget jq nginx vnstat socat cron at uuid-runtime bc net-tools lsof unzip ca-certificates gnupg lsb-release
+apt install -y curl wget jq nginx vnstat socat cron at uuid-runtime bc net-tools lsof unzip ca-certificates gnupg lsb-release btop
 timedatectl set-timezone Asia/Jakarta 2>/dev/null || ln -sf /usr/share/zoneinfo/Asia/Jakarta /etc/localtime
 systemctl enable --now vnstat atd cron
 
