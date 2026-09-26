@@ -1,3 +1,23 @@
+v1.38.0
+UPDATESC: TAMPILAN RINGKAS + PROGRESS BAR ANIMASI
+- Saat updatesc (update manual), layar tidak lagi menampilkan puluhan baris.
+  Sekarang satu baris progress bar beranimasi yang jalan di tempat:
+    Cassanova Update  v1.37.0 -> v1.38.0
+    [############........]  60%  Konfigurasi Xray & Nginx
+  lalu berakhir: [####################] 100%  Selesai ✓
+- Detail lengkap TETAP disimpan ke /var/log/cas-update.log (via tee), jadi
+  tidak ada info yang hilang untuk debug.
+- Baris error kuat (mis. "Config Xray tidak valid", Traceback) tetap
+  dimunculkan merah supaya kegagalan tidak tersembunyi di balik bar.
+- Auto-update (cron) tidak berubah: tetap senyap penuh ke log.
+- Catatan: bar baru muncul mulai update BERIKUTNYA setelah terpasang v1.38.0
+  (karena updatesc yang sedang berjalan masih versi lama saat memasang ini).
+
+HASIL UJI
+- cas_progress diuji dengan simulasi keluaran update.sh: bar naik 0->100%
+  sesuai tiap tahap, selesai dengan ✓, dan baris "tidak valid" tetap tampil.
+- Lolos bash -n.
+
 v1.37.0
 SSH-WS: PING LEBIH STABIL (TCP_NODELAY)
 - Proxy SSH-WebSocket (ws-ssh.py) sekarang menyetel TCP_NODELAY di sisi klien

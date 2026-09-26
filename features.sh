@@ -38,6 +38,36 @@ fetch_latest(){ curl -s --max-time 15 "$BASE/version?t=$(date +%s)" | tr -d '[:s
 fetch_changelog(){ curl -s --max-time 15 "$BASE/changelog?t=$(date +%s)" | head -n 15; }
 newer(){ [[ -n "$1" && "$1" != "$2" && "$(printf '%s\n%s\n' "${1#v}" "${2#v}" | sort -V | tail -n1)" == "${1#v}" ]]; }
 
+# Progress bar animasi untuk update manual: baca output update.sh dari stdin,
+# tampilkan SATU baris bar yang jalan di tempat. Output lengkap tetap ke $LOG
+# (lewat tee sebelum pipe ini). Baris error tetap dimunculkan agar tidak hilang.
+cas_progress(){ # arg1 = versi asal, arg2 = versi tujuan
+  awk -v FROM="$1" -v TO="$2" '
+    function bar(p,   i,f,s){ f=int(p/5); s="["; for(i=0;i<20;i++) s=s (i<f?"#":"."); return s "]" }
+    function draw(p,l){ printf "\r\033[36m%s\033[0m %3d%%  \033[33m%-30s\033[0m\033[K", bar(p), p, l; fflush() }
+    BEGIN{ pct=0; printf "\033[36mCassanova Update\033[0m  %s \342\206\222 %s\n", FROM, TO; draw(0,"mulai...") }
+    {
+      np=pct; lb="";
+      if ($0 ~ /\[1\/7\]/)       {np=10; lb="Paket tambahan"}
+      else if ($0 ~ /\[2\/7\]/)  {np=20; lb="Library"}
+      else if ($0 ~ /\[3\/7\]/)  {np=30; lb="Menu VLESS/VMESS/TROJAN"}
+      else if ($0 ~ /\[4\/7\]/)  {np=40; lb="Menu utama"}
+      else if ($0 ~ /\[5\/7\]/)  {np=50; lb="Migrasi database akun"}
+      else if ($0 ~ /\[6\/7\]/)  {np=60; lb="Konfigurasi Xray & Nginx"}
+      else if ($0 ~ /\[7\/7\]/)  {np=68; lb="Menyelesaikan"}
+      else if ($0 ~ /\[SSH/)     {np=76; lb="Modul SSH"}
+      else if ($0 ~ /\[HY2/)     {np=85; lb="Modul Hysteria2"}
+      else if ($0 ~ /\[FEAT|\[FEATURES/) {np=90; lb="Modul Features"}
+      else if ($0 ~ /\[BOT/)     {np=95; lb="Modul Setup Bot"}
+      else if ($0 ~ /XHTTP\]/)   {np=97; lb="XHTTP"}
+      else if ($0 ~ /UPDATE SELESAI/) {np=100; lb="Selesai"}
+      if (np>pct){ pct=np; draw(pct,lb) }
+      # error kuat tetap dimunculkan (jangan sampai tersembunyi bar)
+      if ($0 ~ /Traceback|FATAL|tidak valid|tidak didukung|[Ee]rror:/) printf "\n\033[31m%s\033[0m\n", $0
+    }
+    END{ if(pct>=100) printf "\r\033[36m%s\033[0m 100%%  \033[32mSelesai \342\234\223\033[0m\033[K\n", bar(100); else printf "\n" }'
+}
+
 tg(){ # kirim pesan ke bot owner VPS (jika ada)
   local BOT_TOKEN CHAT_ID; [[ -f $ASD/bot ]] && . $ASD/bot
   [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && return 0
@@ -63,7 +93,7 @@ do_update(){ # $1 = auto(1/0) ; return 0 sukses
   # 3) jalankan update
   echo "=== $(date '+%F %T') update $cur -> ${latest:-?} (auto=$auto, channel=$BRANCH) ===" >> $LOG
   rm -f $ASD/pending-restart
-  if [[ $auto == 1 ]]; then CAS_AUTO=1 bash $tmp/update.sh >> $LOG 2>&1; else bash $tmp/update.sh 2>&1 | tee -a $LOG; fi
+  if [[ $auto == 1 ]]; then CAS_AUTO=1 bash $tmp/update.sh >> $LOG 2>&1; else bash $tmp/update.sh 2>&1 | tee -a $LOG | cas_progress "$cur" "${latest:-?}"; fi
   # 4) verifikasi, rollback bila gagal
   local ok=1
   xray run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1 || ok=0
