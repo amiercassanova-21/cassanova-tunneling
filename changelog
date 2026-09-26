@@ -1,3 +1,17 @@
+v1.44.0
+MENU: TAMBAH "CEK VPS (MONITORING)" DI FITUR
+- Menu Features kini punya bagian MONITORING (opsi 15) -> submenu:
+    1. Cek VPS (ringkas)     -> tampilan cekvps sekali
+    2. Cek VPS Live (realtime) -> cekvps live, Ctrl-C untuk kembali
+    3. btop (monitor lengkap)  -> buka btop (auto-pasang bila belum ada)
+    4. Kembali
+- "Back to Menu" bergeser jadi opsi 16 (Exit tetap x).
+- cekvps & btop tetap bisa dipanggil langsung dari terminal seperti biasa.
+
+HASIL UJI
+- m-feature lolos bash -n; submenu monitoring + entri 15 + renumber 16
+  terverifikasi. cekvps dipanggil via path lengkap /usr/local/sbin/cekvps.
+
 v1.43.0
 MONITOR: btop OTOMATIS TERPASANG + PERINTAH "cekvps"
 - btop kini ikut terpasang otomatis saat install VPS (dan saat updatesc),

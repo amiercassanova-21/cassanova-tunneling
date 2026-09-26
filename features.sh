@@ -943,6 +943,28 @@ cek_port(){
 cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }
 coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
 
+monitoring(){
+  while true; do
+    header "MONITORING"
+    echo -e "\n ${Y}Pantau kondisi VPS${N}\n"
+    echo -e " ${C}1.)${N} Cek VPS (ringkas)"
+    echo -e " ${C}2.)${N} Cek VPS Live (realtime)"
+    echo -e " ${C}3.)${N} btop (monitor lengkap)"
+    echo -e " ${C}4.)${N} Kembali"
+    echo -e "$LINE\n"
+    trap 'return' INT
+    read -rp "$(echo -e "${G}Select From Options [1-4] : ${N}")" m
+    trap ':' INT
+    case $m in
+      1) /usr/local/sbin/cekvps; read -rp "$(echo -e "\n${P}Press Enter for Back to Menu${N}")" ;;
+      2) ( trap 'exit 0' INT; /usr/local/sbin/cekvps live ) ;;
+      3) command -v btop >/dev/null 2>&1 || apt install -y btop >/dev/null 2>&1; btop ;;
+      4) return ;;
+      *) msg "${R}Pilihan salah${N}" ;;
+    esac
+  done
+}
+
 # mode non-interaktif: adddomain
 if [[ "$1" == "--domain" ]]; then change_domain; exit 0; fi
 if [[ "$1" == "--port" ]]; then cek_port; exit 0; fi
@@ -967,11 +989,13 @@ while true; do
   echo -e " ${C}12.)${N} Information System"
   echo -e " ${C}13.)${N} Cek Port VPS"
   echo -e " ${C}14.)${N} Auto Update"
-  echo -e " ${C}15.)${N} Back to Menu"
+  bar "MONITORING"
+  echo -e " ${C}15.)${N} Cek VPS (Monitoring)"
+  echo -e " ${C}16.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-15 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-16 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "check_bandwidth" ;;
@@ -990,7 +1014,8 @@ while true; do
     12) cas_run "info_system" ;;
     13) cas_run "cek_port" ;;
     14) cas-update; exit 0 ;;
-    15) exit 0 ;;
+    15) cas_run "monitoring" ;;
+    16) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
