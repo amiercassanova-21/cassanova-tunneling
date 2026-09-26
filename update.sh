@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.40.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.41.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -938,13 +938,14 @@ dashboard(){
 }
 
 accounts(){
-  local c1 c2 c3
+  local c1 c2 c3 c4
   c1=$(grep -c . $ASD/db/vmess.db); c2=$(grep -c . $ASD/db/vless.db); c3=$(grep -c . $ASD/db/trojan.db)
   local cs; cs=$(grep -c . $ASD/db/ssh.db 2>/dev/null); [[ "$cs" =~ ^[0-9]+$ ]] || cs=0
+  c4=$(grep -c . $ASD/db/hy2.db 2>/dev/null); [[ "$c4" =~ ^[0-9]+$ ]] || c4=0
   local row
   echo -e "      ${B}┌──────────────────────────────────┐${N}"
   echo -e "                ${G}LIST ACCOUNTS${N}"
-  for row in "SSH/OPENVPN:$cs" "VMESS:$c1" "VLESS:$c2" "TROJAN:$c3"; do
+  for row in "SSH/OPENVPN:$cs" "VMESS:$c1" "VLESS:$c2" "TROJAN:$c3" "HYSTERIA:$c4"; do
     printf "        ${G}%-11s${N} : ${Y}%-3s${N} ${G}ACCOUNT${N}\n" "${row%%:*}" "${row##*:}"
   done
   echo -e "      ${B}└──────────────────────────────────┘${N}"

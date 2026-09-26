@@ -1,3 +1,13 @@
+v1.41.0
+TAMPILAN AWAL: TAMBAH BARIS HYSTERIA DI LIST ACCOUNTS
+- Di layar awal (LIST ACCOUNTS), ditambah baris "HYSTERIA" tepat di bawah TROJAN,
+  menampilkan jumlah akun Hysteria2 (dibaca dari db/hy2.db).
+- Aman kalau modul Hysteria belum terpasang: tampil "HYSTERIA : 0 ACCOUNT".
+
+HASIL UJI
+- accounts() diuji terisolasi: tanpa hy2.db -> 0; dengan 3 entri -> 3.
+  Urutan & format sejajar dengan baris lain. Lolos bash -n.
+
 v1.40.0
 FIX: GAGAL BUAT AKUN SSH SAAT USERNAME BENTROK GRUP SISTEM
 - Masalah: membuat akun (mis. All Protocol / SSH) dengan username yang sama
