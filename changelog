@@ -1,3 +1,56 @@
+v1.36.0
+KONTROL LINK TRIAL (ON/OFF, masa berlaku, ganti alamat)
+- Link trial sekarang beralamat /t/<kode-acak> dan bisa dikendalikan penuh
+  dari bot admin (menu Lainnya -> Link Trial):
+  * ON/OFF  : matikan/hidupkan link kapan saja tanpa ganti URL. Yang sudah
+              terlanjut install tidak terganggu; hanya trial BARU yang ditolak.
+  * Masa link: beri tanggal kedaluwarsa (tombol +7 / +30 hari) atau tanpa
+              batas. Lewat tanggal, link menolak trial baru.
+  * Ganti alamat: rotasi kode link sekali tap; link lama langsung mati
+              (berguna kalau link bocor / di-spam).
+- Panel bot menampilkan status (AKTIF/MATI), durasi, masa link, dan perintah
+  install siap sebar.
+- Endpoint /trial ikut dijaga status ON/OFF & masa berlaku (pertahanan ganda:
+  skrip lama pun tak bisa memaksa trial saat link dimatikan/kedaluwarsa).
+
+Catatan: link lifetime bukan lagi satu-satunya pilihan - defaultnya tetap
+hidup tanpa batas, tapi Anda bisa membatasi/mematikan/mengganti kapan saja.
+Perlu deploy worker.js (Cloudflare) + push bootstrap.sh.
+
+HASIL UJI (worker.js + KV tiruan di Node)
+- 17 tes kontrol link: /t/<slug> aktif; slug salah 404; OFF -> 403 & /trial
+  trial_off; ON lagi -> ok; until lampau -> 403 & trial_link_expired; untildays
+  -> tanggal benar; tanpa batas; rotasi -> slug baru hidup, slug lama 404.
+- 7 tes inti: trial baru + TTL 10 hari; repeat ditolak; renew -> permanen
+  (TTL & tanda trial hilang, client terisi); check licensed.
+
+v1.35.0
+LINK TRIAL SELF-SERVICE (funnel pembeli)
+- BARU: link install TRIAL yang bisa dijalankan IP siapa saja, tapi tetap di
+  bawah kendali lisensi Anda. Sebar satu perintah:
+    bash <(curl -fsSL https://<domain-lisensi>/trial-install)
+- Saat diinstal, VPS otomatis minta lisensi trial (endpoint /trial). Aktif
+  penuh selama N hari (durasi diatur di bot), lalu SC berhenti otomatis lewat
+  enforcement lisensi yang sudah ada. Pembeli menghubungi Anda, Anda tap
+  "Perpanjang" -> jadi lisensi tetap.
+- Aturan: SATU trial per IP. Catatan-klaim (trialed:<ip>) menahan trial ulang
+  dari IP yang sama. Entri trial yang kedaluwarsa TERHAPUS SENDIRI dari database
+  setelah jeda 7 hari (pakai TTL KV, tanpa cron), jadi tidak menumpuk. Lisensi
+  berbayar tidak pernah ikut terhapus.
+- Bot admin: menu "Lainnya" -> tombol "Link Trial" untuk melihat perintah
+  install, dan mengubah durasi trial (1/3/7/14/30 hari) dengan sekali tap.
+- Renew atas akun trial otomatis membuang tanda trial + TTL -> jadi permanen.
+
+Catatan penyebaran: file worker.js (Cloudflare Worker) dan bootstrap.sh perlu
+di-deploy/push seperti biasa. Token bot & ADMIN_KEY tetap di Worker Secrets.
+
+HASIL UJI (worker.js dijalankan dengan KV tiruan di Node, 14 tes)
+- trialcfg baca/atur durasi; trial baru exp & TTL benar (durasi+7 hari);
+  trialed permanen; trial kedua IP sama ditolak; /check trial=licensed;
+  renew trial -> permanen (TTL hilang, tanda trial hilang); IP berlisensi aktif
+  ditolak; fallback CF-Connecting-IP; /trial-install berisi CAS_TRIAL=1 tanpa key.
+- bootstrap.sh & worker.js lolos cek sintaks.
+
 v1.34.0
 MENU: HYSTERIA2 PINDAH KE NOMOR 7 (setelah FEATURES)
 - Urutan menu utama disusun ulang sesuai permintaan:
