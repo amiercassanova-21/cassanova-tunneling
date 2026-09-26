@@ -158,14 +158,21 @@ import socket, threading, select, sys
 LISTEN='127.0.0.1'; LPORT=int(sys.argv[1]) if len(sys.argv)>1 else 8088
 TARGET='127.0.0.1'; TPORT=143
 RESP=b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
+def _nodelay(sock):
+    # Matikan Nagle: paket kecil (interaktif & ping) langsung dikirim, tidak
+    # ditahan untuk digabung. Ini yang membuat ping SSH-WS jauh lebih stabil.
+    try: sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except Exception: pass
 def handle(c):
     s=None
     try:
+        _nodelay(c)
         c.settimeout(15)
         c.recv(16384)
         c.sendall(RESP)
         c.settimeout(None)
         s=socket.create_connection((TARGET,TPORT))
+        _nodelay(s)
         buf=b''; synced=False
         while True:
             r,_,_=select.select([c,s],[],[])

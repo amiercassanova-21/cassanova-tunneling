@@ -1,3 +1,22 @@
+v1.37.0
+SSH-WS: PING LEBIH STABIL (TCP_NODELAY)
+- Proxy SSH-WebSocket (ws-ssh.py) sekarang menyetel TCP_NODELAY di sisi klien
+  dan sisi Dropbear. Sebelumnya tidak, sehingga algoritma Nagle menahan paket
+  kecil (paket interaktif & ping) untuk digabung dulu -> ping meloncat/berombak.
+  Dengan Nagle dimatikan, paket kecil langsung dikirim, ping SSH-WS jauh lebih
+  stabil. (VLESS sudah mulus karena Xray memang TCP_NODELAY otomatis.)
+- Catatan jujur: sebagian selisih ping SSH vs VLESS memang bawaan protokol -
+  di SSH, ping/UDP lewat BadVPN udpgw di atas koneksi SSH, sedangkan VLESS
+  membawa UDP native. Jadi SSH bisa tetap sedikit di atas VLESS, tapi
+  lonjakannya harus jauh berkurang setelah perbaikan ini.
+- Multi-path & mode Enhanced HTTP Custom sudah dikonfirmasi tersambung.
+
+HASIL UJI
+- ws-ssh.py diuji end-to-end (proxy + fake sshd): handshake 101, banner upstream
+  diteruskan, dan data klien (dikirim terpisah setelah request) diteruskan utuh.
+  Perubahan hanya menambah TCP_NODELAY, tidak mengubah logika sync banner.
+- Lolos py_compile & bash -n.
+
 v1.36.0
 KONTROL LINK TRIAL (ON/OFF, masa berlaku, ganti alamat)
 - Link trial sekarang beralamat /t/<kode-acak> dan bisa dikendalikan penuh
