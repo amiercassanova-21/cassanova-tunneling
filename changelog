@@ -1,3 +1,38 @@
+v1.39.0
+ALL PROTOCOL: MENU KELOLA LENGKAP + PEMISAHAN DARI MENU LAIN
+- Menu All Protocol kini punya fungsi kelola penuh, semuanya HANYA untuk akun
+  yang dibuat di All Protocol:
+    Create, Create [Custom UUID], Trial, Hapus Trial, Renew/Extend,
+    Modify UUID, Delete, List Users, Check Config, Recovery,
+    Edit Limit IP, Edit Limit IP All, Edit Bandwidth, Edit Bandwidth All,
+    Rebuild Registry.
+- Create [Custom UUID]: bisa mengetik UUID sendiri (atau kosong = acak),
+  UUID sama dipakai di VLESS+VMESS+TROJAN.
+- Renew/Modify UUID/Edit Limit: berlaku serentak ke semua protokol dalam akun
+  (Limit IP juga ke SSH; Bandwidth/kuota hanya untuk Xray, SSH tidak punya kuota).
+- Registry baru: /etc/autoscript/db/all.db (akun all aktif) & all.trash (terhapus).
+  Akun all-protocol didaftarkan otomatis saat dibuat.
+- PEMISAHAN: akun all-protocol TIDAK LAGI muncul di menu VLESS/VMESS/TROJAN/SSH
+  (List, Check Login, Recovery, Edit Limit All, dan pilih manual disaring).
+  Dikelola sepenuhnya dari menu All Protocol.
+- Rebuild Registry: mendeteksi akun all-protocol LAMA (username sama di
+  ssh+vless+vmess+trojan dengan UUID sama) lalu mendaftarkannya sekali klik.
+- Trial All Protocol tidak didaftarkan ke registry (tetap dihapus otomatis
+  seperti sebelumnya), agar tidak meninggalkan entri basi.
+
+CATATAN
+- Menu VLESS/VMESS/TROJAN/SSH yang lama tidak diubah logikanya; hanya ditambah
+  penyaring agar akun all-protocol tidak ikut tampil/terkelola dari sana.
+
+HASIL UJI
+- 50 skenario mock lulus: create+registrasi, custom UUID, list, renew (tanggal
+  serentak 4 protokol), modify uuid (3 protokol, SSH tetap), edit limit IP
+  (+SSH) & bandwidth (semua akun, SSH tak berubah), delete->all.trash,
+  recovery (uuid custom pulih, trash bersih), filter menu (akun all
+  tersembunyi di m-xray & m-ssh, akun reguler tetap tampil), tolak pilih manual,
+  rebuild (deteksi akun lama, tolak akun uuid-beda).
+- Lolos bash -n untuk lib.sh, m-xray, m-all, m-ssh.
+
 v1.38.0
 UPDATESC: TAMPILAN RINGKAS + PROGRESS BAR ANIMASI
 - Saat updatesc (update manual), layar tidak lagi menampilkan puluhan baris.

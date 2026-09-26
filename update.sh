@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.38.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.39.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -89,6 +89,15 @@ db_field(){ awk -v u="$2" -v f="$3" '$1==u{print $f}' "$ASD/db/$1.db"; }
 db_set(){ awk -v u="$2" -v f="$3" -v v="$4" '$1==u{$f=v}1' "$ASD/db/$1.db" > "$ASD/db/.$1.tmp" && mv "$ASD/db/.$1.tmp" "$ASD/db/$1.db"; }
 db_del(){ awk -v u="$2" '$1!=u' "$ASD/db/$1.db" > "$ASD/db/.$1.tmp" && mv "$ASD/db/.$1.tmp" "$ASD/db/$1.db"; }
 user_exists(){ [[ -n "$(db_get $1 "$2")" ]]; }
+
+# ---- Registry AKUN ALL PROTOCOL ----
+# all.db    : akun all-protocol yang aktif      -> "user uuid"
+# all.trash : akun all-protocol yang dihapus    -> "user uuid deldate"
+# Dipakai untuk memisahkan akun all-protocol dari menu vless/vmess/trojan/ssh.
+ALLDB=$ASD/db/all.db
+ALLTRASH=$ASD/db/all.trash
+is_all(){      [[ -f "$ALLDB" ]]    && awk -v u="$1" '$1==u{f=1} END{exit !f}' "$ALLDB"; }
+is_alltrash(){ [[ -f "$ALLTRASH" ]] && awk -v u="$1" '$1==u{f=1} END{exit !f}' "$ALLTRASH"; }
 
 make_client(){
   case $1 in
@@ -510,6 +519,7 @@ list_users(){ # $1 = all | active | inactive
   local i=0 u exp id ipl q st qd
   while read -r u exp id ipl q st; do
     [[ -z "$u" ]] && continue
+    is_all "$u" && continue
     [[ $f == active && "$st" != active ]] && continue
     [[ $f == inactive && "$st" == active ]] && continue
     i=$((i+1))
@@ -550,6 +560,7 @@ pick_user(){ # $1 = all | active | inactive ; hasil di variabel U
   else
     U=$inp
   fi
+  if [[ -n "$U" ]] && is_all "$U"; then msg "${Y}Akun '$U' dikelola lewat menu All Protocol${N}"; return 1; fi
   [[ -n "$U" && -n "$(db_get $PROTO "$U")" ]] && return 0
   msg "${R}User tidak ditemukan${N}"; return 1
 }
@@ -640,6 +651,7 @@ check_login(){
   data=$(recent_ips 300)
   while read -r u exp id ipl q st; do
     [[ -z "$u" ]] && continue
+    is_all "$u" && continue
     ips=$(echo "$data" | awk -v u="$PROTO.$u" '$1==u{print $2}')
     [[ -z "$ips" ]] && continue
     n=$(echo "$ips" | grep -c .); found=1; no=$((no+1))
@@ -688,7 +700,9 @@ recovery(){
   header "RECOVERY $UP"
   [[ -z "$quiet" ]] && printf " ${G}%-3s %-16s %-12s${N}\n" "NO" "USERNAME" "DIHAPUS"
   while read -r u exp id ipl q st del; do
-    [[ -z "$u" ]] && continue; i=$((i+1)); names+=("$u")
+    [[ -z "$u" ]] && continue
+    is_alltrash "$u" && continue
+    i=$((i+1)); names+=("$u")
     [[ -z "$quiet" ]] && printf " %-3s %-16s %-12s\n" "$i" "$u" "$del"
   done < <(tac "$TRASH" 2>/dev/null)
   [[ $i == 0 ]] && { echo -e " ${Y}Tidak ada akun yang bisa dipulihkan${N}"; pause; return; }
@@ -724,8 +738,9 @@ edit_field(){ # field(4=ip,5=quota) all(0/1)
   read -rp "$label : " v; num_ok "$v" || { msg "${R}Harus angka${N}"; return; }
   lock_db
   if [[ $all == 1 ]]; then
-    awk -v f="$f" -v v="$v" 'NF{$f=v}1' "$DB" > "$DB.tmp" && mv "$DB.tmp" "$DB"
-    TARGETS=$(awk '{print $1}' "$DB")
+    # akun all-protocol dilewati (dikelola dari menu All Protocol)
+    awk -v f="$f" -v v="$v" -v adb="$ALLDB" 'BEGIN{while((getline l<adb)>0){split(l,a," ");skip[a[1]]=1}} NF{ if(!($1 in skip)) $f=v }1' "$DB" > "$DB.tmp" && mv "$DB.tmp" "$DB"
+    TARGETS=$(awk -v adb="$ALLDB" 'BEGIN{while((getline l<adb)>0){split(l,a," ");skip[a[1]]=1}} NF{ if(!($1 in skip)) print $1 }' "$DB")
   else
     db_set $PROTO "$U" "$f" "$v"; TARGETS=$U
   fi
@@ -1200,6 +1215,209 @@ tg(){ # kirim satu pesan, berurutan (bukan latar belakang) agar urutannya benar
     "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
 }
 
+# =====================================================
+#  FUNGSI KELOLA AKUN ALL PROTOCOL (registry all.db)
+#  Semua fungsi ini HANYA menyentuh akun yang terdaftar di all.db,
+#  dan fan-out ke tiap protokol lewat primitif lib.sh (tanpa mengubah m-xray/m-ssh).
+# =====================================================
+PA="vless vmess trojan"                    # protokol xray dalam satu akun all
+_reg_add(){ touch "$ALLDB"; grep -q "^$1 " "$ALLDB" 2>/dev/null || echo "$1 $2" >> "$ALLDB"; }
+_reg_uuid(){ awk -v u="$1" '$1==u{print $2; exit}' "$ALLDB" 2>/dev/null; }
+_reg_del(){ [[ -f "$ALLDB" ]] && { awk -v u="$1" '$1!=u' "$ALLDB" > "$ALLDB.t" && mv "$ALLDB.t" "$ALLDB"; }; }
+_reg_set_uuid(){ awk -v u="$1" -v id="$2" '$1==u{$2=id}1' "$ALLDB" > "$ALLDB.t" && mv "$ALLDB.t" "$ALLDB"; }
+
+# tabel akun all-protocol (baca kondisi nyata dari vless.db) -> set ALLN
+all_table(){
+  touch "$ALLDB"
+  printf " ${G}%-3s %-14s %-10s %-4s %-8s %s${N}\n" "NO" "USER" "EXPIRED" "IP" "KUOTA" "ST"
+  local i=0 u uuid exp ipl q st
+  while read -r u uuid; do
+    [[ -z "$u" ]] && continue
+    exp=$(db_field vless "$u" 2); ipl=$(db_field vless "$u" 4)
+    q=$(db_field vless "$u" 5); st=$(db_field vless "$u" 6)
+    i=$((i+1))
+    printf " %-3s %-14s %-10s %-4s %-8s %s\n" "$i" "$u" "${exp:-?}" \
+      "$([[ "$ipl" == 0 || -z "$ipl" ]] && echo - || echo "$ipl")" \
+      "$([[ "$q" == 0 || -z "$q" ]] && echo Unlim || echo "${q}G")" "${st:-?}"
+  done < "$ALLDB"
+  ALLN=$i
+}
+
+# pilih satu akun all-protocol -> variabel AU
+all_pick(){
+  all_table
+  [[ $ALLN == 0 ]] && { echo -e "\n ${Y}Belum ada akun all-protocol${N}"; read -rp "Tekan Enter..."; return 1; }
+  echo -e "$LINE"
+  local inp; read -rp "Nomor / Username : " inp
+  if [[ "$inp" =~ ^[0-9]+$ ]]; then AU=$(awk -v n="$inp" 'NF{i++; if(i==n){print $1; exit}}' "$ALLDB")
+  else AU=$inp; fi
+  [[ -n "$AU" ]] && is_all "$AU" && return 0
+  echo -e " ${R}Akun tidak ada di daftar all-protocol${N}"; sleep 2; return 1
+}
+
+all_renew(){
+  header "RENEW ALL PROTOCOL"
+  all_pick || return
+  local d base today new st p
+  read -rp "Tambah masa aktif (hari) : " d; num_ok "$d" || die "Harus angka"
+  today=$(date +%F); base=$(db_field vless "$AU" 2)
+  [[ -z "$base" || "$base" < "$today" ]] && base=$today
+  new=$(date -d "$base +$d days" +%F)
+  lock_db
+  for p in $PA; do
+    db_set $p "$AU" 2 "$new"
+    rm -f $ASD/usage/$p/$AU
+    xray api statsquery --server=$API -pattern "user>>>$p.$AU>>>" -reset >/dev/null 2>&1
+    st=$(db_field $p "$AU" 6)
+    [[ "$st" == "quota" ]] && { xray_add $p "$AU" "$(db_field $p "$AU" 3)"; db_set $p "$AU" 6 active; }
+  done
+  unlock_db
+  # SSH: perbarui exp + status + kunci tanggal sistem
+  awk -v u="$AU" -v n="$new" '$1==u{$2=n; if($4!="active")$4="active"}1' $ASD/db/ssh.db > $ASD/db/ssh.db.t && mv $ASD/db/ssh.db.t $ASD/db/ssh.db
+  chage -E "$new" "$AU" 2>/dev/null; usermod -U "$AU" 2>/dev/null
+  echo -e "\n ${G}$AU diperpanjang $d hari (semua protokol). Aktif s/d $new.${N}\n"
+  read -rp "Tekan Enter..."
+}
+
+all_moduuid(){
+  header "MODIFY UUID ALL PROTOCOL"
+  all_pick || return
+  local id p st
+  read -rp "UUID baru (kosong = acak) : " id; id=${id:-$(gen_id)}
+  [[ "$id" =~ [[:space:]] ]] && die "UUID tidak valid"
+  lock_db
+  for p in $PA; do
+    db_set $p "$AU" 3 "$id"
+    st=$(db_field $p "$AU" 6)
+    [[ "$st" == "active" ]] && xray_add $p "$AU" "$id"
+  done
+  _reg_set_uuid "$AU" "$id"
+  unlock_db
+  echo -e "\n ${G}UUID $AU diganti untuk VLESS+VMESS+TROJAN:${N} ${Y}$id${N}"
+  echo -e " ${Y}(SSH tidak terpengaruh, memakai password.)${N}\n"
+  read -rp "Tekan Enter..."
+}
+
+all_list_users(){
+  header "LIST USERS ALL PROTOCOL"
+  all_table
+  echo -e "$LINE"
+  echo -e " ${G}Total : ${Y}$ALLN${G} akun all-protocol${N}"
+  echo -e "$LINE"
+  read -rp "Tekan Enter..."
+}
+
+all_delete(){
+  header "DELETE ALL PROTOCOL"
+  all_pick || return
+  echo
+  echo -e " Hapus akun ${Y}$AU${N} dari ${R}SEMUA protokol${N}?"
+  local y; read -rp " (y/t) : " y; [[ "$y" == y || "$y" == Y ]] || { echo -e "\n ${Y}Dibatalkan${N}"; sleep 1; return; }
+  local uuid p; uuid=$(_reg_uuid "$AU"); [[ -z "$uuid" ]] && uuid=$(db_field vless "$AU" 3)
+  trap '' INT
+  for p in $PA; do /usr/local/sbin/m-xray $p --delete "$AU" >/dev/null 2>&1; done
+  /usr/local/sbin/m-ssh ssh --delete "$AU" >/dev/null 2>&1
+  touch "$ALLTRASH"; echo "$AU $uuid $(date +%F)" >> "$ALLTRASH"
+  _reg_del "$AU"
+  trap ':' INT
+  echo -e "\n ${G}$AU dihapus dari semua protokol (masuk Recovery All Protocol).${N}\n"
+  read -rp "Tekan Enter..."
+}
+
+all_recovery(){
+  header "RECOVERY ALL PROTOCOL"
+  touch "$ALLTRASH"
+  local i=0 u uuid del names=() uuids=()
+  printf " ${G}%-3s %-16s %-12s${N}\n" "NO" "USERNAME" "DIHAPUS"
+  while read -r u uuid del; do
+    [[ -z "$u" ]] && continue
+    i=$((i+1)); names+=("$u"); uuids+=("$uuid")
+    printf " %-3s %-16s %-12s\n" "$i" "$u" "$del"
+  done < <(tac "$ALLTRASH" 2>/dev/null)
+  [[ $i == 0 ]] && { echo -e " ${Y}Tidak ada akun all-protocol untuk dipulihkan${N}"; read -rp "Tekan Enter..."; return; }
+  echo -e "$LINE"
+  local inp u2 uuid2; read -rp "Nomor / Username : " inp
+  if [[ "$inp" =~ ^[0-9]+$ ]] && (( inp>=1 && inp<=i )); then u2=${names[$((inp-1))]}; uuid2=${uuids[$((inp-1))]}
+  else u2=$inp; uuid2=$(awk -v u="$inp" '$1==u{print $2; exit}' "$ALLTRASH"); fi
+  [[ -z "$u2" ]] && die "Pilihan salah"
+  id "$u2" >/dev/null 2>&1 && die "Username $u2 masih dipakai di sistem"
+  [[ -z "$uuid2" ]] && uuid2=$(gen_id)
+  local d ipl q pass
+  read -rp "Masa aktif (hari) : " d; num_ok "$d" || die "Harus angka"
+  read -rp "Limit IP (0=unlimited) [2] : " ipl; ipl=${ipl:-2}; num_ok "$ipl" || die "Harus angka"
+  read -rp "Kuota GB (0=unlimited) [0] : " q; q=${q:-0}; num_ok "$q" || die "Harus angka"
+  read -rp "Password SSH baru : " pass; [[ -z "$pass" ]] && die "Password kosong"
+  trap '' INT
+  local p
+  for p in $PA; do /usr/local/sbin/m-xray $p --create "$u2" "$uuid2" "$d" "$ipl" "$q" >/dev/null 2>&1; done
+  /usr/local/sbin/m-ssh ssh --create "$u2" "$pass" "$d" "$ipl" >/dev/null 2>&1
+  for p in $PA; do awk -v u="$u2" '$1!=u' $ASD/db/$p.trash > $ASD/db/$p.trash.t 2>/dev/null && mv $ASD/db/$p.trash.t $ASD/db/$p.trash; done
+  awk -v u="$u2" '$1!=u' $ASD/db/ssh.trash > $ASD/db/ssh.trash.t 2>/dev/null && mv $ASD/db/ssh.trash.t $ASD/db/ssh.trash
+  awk -v u="$u2" '$1!=u' "$ALLTRASH" > "$ALLTRASH.t" && mv "$ALLTRASH.t" "$ALLTRASH"
+  _reg_add "$u2" "$uuid2"
+  trap ':' INT
+  echo -e "\n ${G}$u2 dipulihkan (SSH+VLESS+VMESS+TROJAN), aktif $d hari.${N}"
+  echo -e " Password SSH: ${Y}$pass${N}   UUID: ${Y}$uuid2${N}\n"
+  read -rp "Tekan Enter..."
+}
+
+# $1 = field (4=Limit IP, 5=Kuota GB) ; $2 = 0 satu akun / 1 semua akun
+all_editlimit(){
+  local f=$1 all=$2 label v p u st used targets
+  [[ $f == 4 ]] && label="Limit IP (0=unlimited)" || label="Kuota GB (0=unlimited)"
+  if [[ $all == 1 ]]; then
+    header "EDIT ${label%% *} SEMUA AKUN ALL"
+    all_table; [[ $ALLN == 0 ]] && { echo -e "\n ${Y}Belum ada akun${N}"; read -rp "Tekan Enter..."; return; }
+  else
+    header "EDIT ${label%% *} ALL PROTOCOL"; all_pick || return
+  fi
+  echo -e "$LINE"
+  read -rp "$label : " v; num_ok "$v" || die "Harus angka"
+  lock_db
+  if [[ $all == 1 ]]; then targets=$(awk 'NF{print $1}' "$ALLDB"); else targets="$AU"; fi
+  for u in $targets; do
+    for p in $PA; do
+      db_set $p "$u" "$f" "$v"
+      if [[ $f == 5 ]]; then
+        st=$(db_field $p "$u" 6); used=$(usage_get $p "$u")
+        if [[ "$st" == "quota" ]] && { (( v == 0 )) || (( used < v * 1073741824 )); }; then
+          xray_add $p "$u" "$(db_field $p "$u" 3)"; db_set $p "$u" 6 active
+        fi
+      fi
+    done
+    # Limit IP juga diterapkan ke SSH (field 3). Kuota tidak berlaku untuk SSH.
+    [[ $f == 4 ]] && { awk -v u="$u" -v v="$v" '$1==u{$3=v}1' $ASD/db/ssh.db > $ASD/db/ssh.db.t && mv $ASD/db/ssh.db.t $ASD/db/ssh.db; }
+  done
+  unlock_db
+  echo -e "\n ${G}Tersimpan untuk $([[ $all == 1 ]] && echo "$ALLN akun" || echo "$AU").${N}\n"
+  read -rp "Tekan Enter..."
+}
+
+all_rebuild(){
+  header "REBUILD REGISTRY ALL PROTOCOL"
+  echo -e " Mendeteksi akun lama yang ada di ${Y}SSH+VLESS+VMESS+TROJAN${N}"
+  echo -e " dengan UUID sama (ciri akun all-protocol)...\n"
+  touch "$ALLDB"
+  local u exp id ipl q st vm tr found=0 list=""
+  while read -r u exp id ipl q st; do
+    [[ -z "$u" ]] && continue
+    is_all "$u" && continue
+    vm=$(db_field vmess "$u" 3); tr=$(db_field trojan "$u" 3)
+    [[ -n "$id" && "$vm" == "$id" && "$tr" == "$id" ]] || continue
+    id "$u" >/dev/null 2>&1 || continue
+    found=$((found+1)); list+="$u $id"$'\n'
+  done < $ASD/db/vless.db
+  if (( found == 0 )); then echo -e " ${Y}Tidak ada akun all-protocol lama yang terdeteksi.${N}\n"; read -rp "Tekan Enter..."; return; fi
+  echo -e " ${G}Terdeteksi $found akun:${N}"
+  awk 'NF{print "  - "$1}' <<< "$list"
+  echo
+  local y; read -rp "Daftarkan semua ke registry all-protocol? (y/t) : " y
+  [[ "$y" == y || "$y" == Y ]] || { echo -e "\n ${Y}Dibatalkan${N}"; sleep 1; return; }
+  while read -r u id; do [[ -z "$u" ]] && continue; _reg_add "$u" "$id"; done <<< "$list"
+  echo -e "\n ${G}$found akun didaftarkan. Sekarang hanya muncul di menu All Protocol.${N}\n"
+  read -rp "Tekan Enter..."
+}
+
 # -----------------------------------------------------------------------
 # Tanpa argumen = tampilkan menu. Tiap pilihan menjalankan ulang script ini
 # dengan argumennya sendiri, jadi badan pembuat akun di bawah tidak berubah.
@@ -1210,21 +1428,43 @@ if [[ -z "$1" ]]; then
     header "ALL PROTOCOL"
     echo -e "\n ${Y}Satu akun untuk SSH + VLESS + VMESS + TROJAN${N}\n"
     echo -e " ${C}1.)${N}  Create Account"
-    echo -e " ${C}2.)${N}  Trial Account"
-    echo -e " ${C}3.)${N}  Hapus Semua Akun Trial"
-    echo -e " ${C}4.)${N}  Cek Config Akun (semua protokol)"
-    echo -e " ${C}5.)${N}  Back to Features"
+    echo -e " ${C}2.)${N}  Create [Custom UUID]"
+    echo -e " ${C}3.)${N}  Trial Account"
+    echo -e " ${C}4.)${N}  Hapus Semua Akun Trial"
+    echo -e " ${C}5.)${N}  Renew / Extend"
+    echo -e " ${C}6.)${N}  Modify UUID"
+    echo -e " ${C}7.)${N}  Delete"
+    echo -e " ${C}8.)${N}  List Users"
+    echo -e " ${C}9.)${N}  Check Config"
+    echo -e " ${C}10.)${N} Recovery"
+    echo -e " ${C}11.)${N} Edit Limit IP"
+    echo -e " ${C}12.)${N} Edit Limit IP All"
+    echo -e " ${C}13.)${N} Edit Limit Bandwidth"
+    echo -e " ${C}14.)${N} Edit Limit Bandwidth All"
+    echo -e " ${C}15.)${N} Rebuild Registry (akun lama)"
+    echo -e " ${C}16.)${N} Back to Features"
     echo -e " ${C}x.)${N}  Exit"
     echo -e "$LINE\n"
     trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-    read -rp "$(echo -e "${G}Select From Options [1-5 or x] : ${N}")" _o
+    read -rp "$(echo -e "${G}Select From Options [1-16 or x] : ${N}")" _o
     trap ':' INT
     case $_o in
-      1) cas_run "$0" --create ;;
-      2) cas_run "$0" --trial ;;
-      3) cas_run "$0" --deltrial ;;
-      4) cas_run "$0" --check ;;
-      5) exit 0 ;;
+      1)  cas_run "$0" --create ;;
+      2)  cas_run "$0" --createx ;;
+      3)  cas_run "$0" --trial ;;
+      4)  cas_run "$0" --deltrial ;;
+      5)  cas_run "$0" --renew ;;
+      6)  cas_run "$0" --moduuid ;;
+      7)  cas_run "$0" --del ;;
+      8)  cas_run "$0" --list ;;
+      9)  cas_run "$0" --check ;;
+      10) cas_run "$0" --recov ;;
+      11) cas_run "$0" --lipip ;;
+      12) cas_run "$0" --lipipall ;;
+      13) cas_run "$0" --lbw ;;
+      14) cas_run "$0" --lbwall ;;
+      15) cas_run "$0" --rebuild ;;
+      16) exit 0 ;;
       # 97 = minta menu pemanggil ikut keluar sampai ke shell
       x|X) clear; exit 97 ;;
       *) echo -e "${R}Pilihan salah${N}"; sleep 1 ;;
@@ -1232,13 +1472,34 @@ if [[ -z "$1" ]]; then
   done
 fi
 
+# ---- dispatch fungsi kelola all-protocol ----
+case "$1" in
+  --renew)    all_renew;        exit 0 ;;
+  --moduuid)  all_moduuid;      exit 0 ;;
+  --list)     all_list_users;   exit 0 ;;
+  --del)      all_delete;       exit 0 ;;
+  --recov)    all_recovery;     exit 0 ;;
+  --lipip)    all_editlimit 4 0; exit 0 ;;
+  --lipipall) all_editlimit 4 1; exit 0 ;;
+  --lbw)      all_editlimit 5 0; exit 0 ;;
+  --lbwall)   all_editlimit 5 1; exit 0 ;;
+  --rebuild)  all_rebuild;      exit 0 ;;
+esac
+
 # -----------------------------------------------------------------------
 # Cek config satu username di SEMUA protokol sekaligus (SSH+VLESS+VMESS+TROJAN)
 # -----------------------------------------------------------------------
 if [[ "$1" == --check ]]; then
   header "CEK CONFIG AKUN (SEMUA PROTOKOL)"
-  read -rp "Username : " CU
+  all_table
+  [[ $ALLN -gt 0 ]] && echo -e "$LINE"
+  read -rp "Nomor / Username : " CU
   [[ -z "$CU" ]] && exit 0
+  # boleh pilih pakai nomor dari daftar all-protocol di atas
+  if [[ "$CU" =~ ^[0-9]+$ ]]; then
+    _sel=$(awk -v n="$CU" 'NF{i++; if(i==n){print $1; exit}}' "$ALLDB" 2>/dev/null)
+    [[ -n "$_sel" ]] && CU=$_sel
+  fi
   found=0
   # SSH (password tidak tersimpan, jadi hanya info sambungan)
   if awk -v u="$CU" '$1==u{f=1}END{exit !f}' $ASD/db/ssh.db 2>/dev/null; then
@@ -1333,6 +1594,8 @@ fi
 # Mode trial: "m-all --trial". Username dibuat sendiri, masa aktif dalam menit,
 # dan tiap protokol menjadwalkan hapus otomatis (lewat "at") begitu waktu habis.
 TRIAL=0; [[ "$1" == --trial ]] && TRIAL=1
+CUSTOM=0; [[ "$1" == --createx ]] && CUSTOM=1
+UUID_PRESET=""
 
 if (( TRIAL )); then
   header "TRIAL ALL PROTOCOL"
@@ -1362,7 +1625,7 @@ if (( TRIAL )); then
   echo -e "\n ${G}Username trial :${N} ${Y}$U${N}"
   DARG="${D}m"; DLAB="$D menit"
 else
-  header "CREATE ALL PROTOCOL"
+  header "CREATE ALL PROTOCOL$( (( CUSTOM )) && echo ' [CUSTOM UUID]')"
   echo -e " ${Y}Satu akun untuk SSH + VLESS + VMESS + TROJAN${N}\n"
   read -rp "Username : " U
   [[ "$U" =~ ^[a-z_][a-z0-9_-]{2,20}$ ]] || die "Username: huruf kecil/angka/-/_ , 3-21 karakter"
@@ -1370,6 +1633,10 @@ else
   for _p in vless vmess trojan; do   # jangan pakai $P: itu kode warna dari lib.sh
     awk -v u="$U" '$1==u{f=1} END{exit !f}' $ASD/db/$_p.db 2>/dev/null && die "Username $U sudah ada di ${_p^^}"
   done
+  if (( CUSTOM )); then
+    read -rp "UUID Xray (kosong = acak) : " UUID_PRESET
+    [[ "$UUID_PRESET" =~ [[:space:]] ]] && die "UUID tidak boleh mengandung spasi"
+  fi
   read -rp "Masa aktif (hari) : " D; num_ok "$D" || die "Masa aktif harus angka"
   read -rp "Limit IP (0 = unlimited) [2] : " IPL; IPL=${IPL:-2}; num_ok "$IPL" || die "Limit IP harus angka"
   read -rp "Kuota GB (0 = unlimited) [0] : " Q; Q=${Q:-0}; num_ok "$Q" || die "Kuota harus angka"
@@ -1377,7 +1644,7 @@ else
 fi
 
 PASS=$(rnd 10); [[ ${#PASS} -ge 6 ]] || PASS="cas$(date +%s | tail -c 6)"
-UUID=$(gen_id)
+UUID=${UUID_PRESET:-$(gen_id)}
 echo -e "\n ${G}Membuat akun...${N}"
 trap '' INT          # selama pembuatan, Ctrl-C ditahan agar tidak setengah jadi
 
@@ -1409,6 +1676,8 @@ run TROJAN "$TMPD/tr"  /usr/local/sbin/m-xray trojan --create "$U" "$UUID" "$DAR
 OUT_SSH=$(cat "$TMPD/ssh"); OUT_VL=$(cat "$TMPD/vl")
 OUT_VM=$(cat "$TMPD/vm");   OUT_TR=$(cat "$TMPD/tr")
 trap - INT           # pembuatan selesai, Ctrl-C boleh lagi
+# daftarkan ke registry all-protocol (akun permanen saja, bukan trial)
+(( TRIAL == 0 )) && _reg_add "$U" "$UUID"
 
 EXP=$(awk -F'|' '/^OK\|/{print $4; exit}' <<< "$OUT_SSH")
 IPV=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)

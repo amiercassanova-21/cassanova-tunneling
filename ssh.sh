@@ -333,6 +333,7 @@ list_users(){ # $1 = all | active | inactive
   local i=0 u exp ipl st lab
   while read -r u exp ipl st; do
     [[ -z "$u" ]] && continue
+    is_all "$u" && continue
     [[ $f == active && "$st" != active ]] && continue
     [[ $f == inactive && "$st" == active ]] && continue
     i=$((i+1))
@@ -371,6 +372,7 @@ pick_user(){ # $1 = all | active | inactive
   else
     U=$inp
   fi
+  if [[ -n "$U" ]] && is_all "$U"; then msg "${Y}Akun '$U' dikelola lewat menu All Protocol${N}"; return 1; fi
   [[ -n "$U" && -n "$(awk -v u="$U" '$1==u' "$DB")" ]] && return 0
   msg "${R}User tidak ditemukan${N}"; return 1
 }
@@ -440,7 +442,7 @@ check_login(){
   local i=0 u n
   # Hanya tampilkan yang memang akun pelanggan (ada di database)
   local -A DBU=()
-  while read -r u _; do [[ -n "$u" ]] && DBU["$u"]=1; done < "$DB"
+  while read -r u _; do [[ -n "$u" ]] && ! is_all "$u" && DBU["$u"]=1; done < "$DB"
   # Dulu memakai pola "user@" dari judul proses, sehingga sesi Dropbear tidak
   # pernah muncul (Dropbear tidak menulis nama user di judul proses).
   while read -r u n; do
@@ -470,7 +472,7 @@ recovery(){
   local i=0 u exp ipl st del inp new d names=()
   header "RECOVERY SSH"
   printf " ${G}%-3s %-14s %-12s${N}\n" "NO" "USERNAME" "DIHAPUS"
-  while read -r u exp ipl st del; do [[ -z "$u" ]] && continue; i=$((i+1)); names+=("$u"); printf " %-3s %-14s %-12s\n" "$i" "$u" "$del"; done < <(tac "$TRASH" 2>/dev/null)
+  while read -r u exp ipl st del; do [[ -z "$u" ]] && continue; is_alltrash "$u" && continue; i=$((i+1)); names+=("$u"); printf " %-3s %-14s %-12s\n" "$i" "$u" "$del"; done < <(tac "$TRASH" 2>/dev/null)
   [[ $i == 0 ]] && { echo -e " ${Y}Kosong${N}"; pause; return; }
   echo -e "$LINE"; echo -e " ${G}Total : ${Y}$i${G} akun${N}"; echo -e "$LINE"
   read -rp "Nomor / Username : " inp
@@ -493,7 +495,7 @@ edit_limit(){ # all(0/1)
   if [[ $1 == 1 ]]; then list_users; else pick_user || return; fi
   read -rp "Limit IP (0 = unlimited) : " v; num_ok "$v" || { msg "${R}Harus angka${N}"; return; }
   lock_db
-  if [[ $1 == 1 ]]; then awk -v v="$v" 'NF{$3=v}1' "$DB" > "$DB.t" && mv "$DB.t" "$DB"; else sset "$U" 3 "$v"; fi
+  if [[ $1 == 1 ]]; then awk -v v="$v" -v adb="$ALLDB" 'BEGIN{while((getline l<adb)>0){split(l,a," ");skip[a[1]]=1}} NF{ if(!($1 in skip)) $3=v }1' "$DB" > "$DB.t" && mv "$DB.t" "$DB"; else sset "$U" 3 "$v"; fi
   unlock_db; echo -e "${G}Tersimpan${N}"; pause
 }
 
