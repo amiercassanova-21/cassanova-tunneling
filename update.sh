@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.33.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.34.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -1106,10 +1106,10 @@ while true; do
   dashboard; version_box
   top
   printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "1.)" "SSH" "6.)" "FEATURES"
-  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "2.)" "VMESS" "7.)" "SET REDUCE/TIME"
-  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "3.)" "VLESS" "8.)" "SET BRAND NAME"
-  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "4.)" "TROJAN" "9.)" "CHECK SERVICES"
-  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "5.)" "SETUP BOT" "10.)" "HYSTERIA2"
+  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "2.)" "VMESS" "7.)" "HYSTERIA2"
+  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "3.)" "VLESS" "8.)" "SET REDUCE/TIME"
+  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "4.)" "TROJAN" "9.)" "SET BRAND NAME"
+  printf "${B}│${N} ${C}%-4s${N} %-18s ${C}%-4s${N} %-16s\n" "5.)" "SETUP BOT" "10.)" "CHECK SERVICES"
   printf "${B}│${N} %-23s ${C}%-4s${N} %-16s\n" "" "x.)" "EXIT"
   bot
   echo
@@ -1126,10 +1126,10 @@ while true; do
     4) m-xray trojan ;;
     5) m-bot ;;
     6) m-feature ;;
-    8) m-brand ;;
-    7) cas_run "set_bantime"; [[ $? == 97 ]] && { clear; exit 0; } ;;
-    9) cas_run "running" ;;
-    10) m-hy2 ;;
+    7) m-hy2 ;;
+    8) cas_run "set_bantime"; [[ $? == 97 ]] && { clear; exit 0; } ;;
+    9) m-brand ;;
+    10) cas_run "running" ;;
     x|X) clear; exit 0 ;;
     *) echo -e "${R}Pilihan salah${N}"; sleep 1 ;;
   esac

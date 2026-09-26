@@ -1,3 +1,9 @@
+v1.34.0
+MENU: HYSTERIA2 PINDAH KE NOMOR 7 (setelah FEATURES)
+- Urutan menu utama disusun ulang sesuai permintaan:
+  6) FEATURES  7) HYSTERIA2  8) SET REDUCE/TIME  9) SET BRAND NAME
+  10) CHECK SERVICES. Fungsi tiap menu tidak berubah, hanya nomornya.
+
 v1.33.0
 CEK CONFIG & CONVERT LINK
 - Check Config (menu tiap protokol, opsi 11) sekarang menampilkan AKUN LENGKAP
