@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.28.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.29.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -340,6 +340,9 @@ mk_link(){ # net(ws|up|grpc|reality) tls(1|0)  -> pakai variabel ID & REM
     echo "vless://$ID@$DOMAIN:$rp?encryption=none&security=reality&type=tcp&headerType=none&fp=chrome&sni=$rd&pbk=$rpub&sid=$rsid#$REM"
     return
   fi
+  # XHTTP: tiap protokol punya port & penanda siap sendiri
+  local _xpf=$ASD/xhttp_port
+  [[ $PROTO == trojan ]] && _xpf=$ASD/xhttp_port_trojan
   [[ $2 == 1 ]] && { port=443; sec=tls; tlsv=tls; } || { port=80; sec=none; tlsv=""; }
   case $1 in
     ws)   t=ws;          path=$WSPATH ;;
@@ -347,8 +350,8 @@ mk_link(){ # net(ws|up|grpc|reality) tls(1|0)  -> pakai variabel ID & REM
     grpc) t=grpc;        path="$PROTO-grpc" ;;
     # XHTTP punya port & TLS sendiri (tidak lewat nginx), jadi portnya ditimpa
     xh)   t=xhttp;       path="/xh$PROTO"
-          port=$(cat $ASD/xhttp_port 2>/dev/null | tr -d '[:space:]')
-          [[ "$port" =~ ^[0-9]+$ ]] || port=2096
+          port=$(cat $_xpf 2>/dev/null | tr -d '[:space:]')
+          [[ "$port" =~ ^[0-9]+$ ]] || { [[ $PROTO == trojan ]] && port=2083 || port=2096; }
           sec=tls ;;
   esac
   if [[ $PROTO == vmess ]]; then
@@ -378,10 +381,12 @@ show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (aku
   ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
   row(){ printf " ${G}%-14s${N}: %b\n" "$1" "$2"; }
   sec(){ echo -e "$L2"; printf "${Y}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$L2"; }
-  # XHTTP hanya untuk VLESS, dan hanya kalau sudah benar-benar terpasang
+  # XHTTP untuk VLESS & TROJAN, hanya kalau sudah benar-benar terpasang
   local xhon=0 xhport=""
   if [[ $PROTO == vless && -f $ASD/xhttp_on ]]; then
     xhon=1; xhport=$(cat $ASD/xhttp_port 2>/dev/null | tr -d '[:space:]'); xhport=${xhport:-2096}
+  elif [[ $PROTO == trojan && -f $ASD/xhttp_on_trojan ]]; then
+    xhon=1; xhport=$(cat $ASD/xhttp_port_trojan 2>/dev/null | tr -d '[:space:]'); xhport=${xhport:-2083}
   fi
   local netlist="ws,grpc,upgrade"
   (( xhon )) && netlist="ws,grpc,upgrade,xhttp"
@@ -790,7 +795,7 @@ case "$2" in
     printf 'LINK|%s GRPC|%s\n'            "$UP" "$(mk_link grpc 1)"
     printf 'LINK|%s UPGRADE TLS|%s\n'     "$UP" "$(mk_link up 1)"
     printf 'LINK|%s UPGRADE NON-TLS|%s\n' "$UP" "$(mk_link up 0)"
-    [[ $PROTO == vless && -f $ASD/xhttp_on ]] && \
+    { [[ $PROTO == vless && -f $ASD/xhttp_on ]] || [[ $PROTO == trojan && -f $ASD/xhttp_on_trojan ]]; } && \
       printf 'LINK|%s XHTTP TLS|%s\n' "$UP" "$(mk_link xh 1)"
     [[ $PROTO == vless && -s $ASD/reality_pub ]] && \
       printf 'LINK|%s REALITY|%s\n' "$UP" "$(mk_link reality 1)"
@@ -1547,7 +1552,7 @@ jq '
   )' $CFG > $CFG.tmp && mv $CFG.tmp $CFG
 
 # =====================================================
-#  VLESS XHTTP (port sendiri, TLS diurus Xray, tanpa nginx)
+#  XHTTP VLESS + TROJAN (port sendiri, TLS diurus Xray, tanpa nginx)
 # =====================================================
 # Kenapa tidak lewat nginx: XHTTP modern memakai mode stream-up/stream-one yang
 # butuh reverse proxy full-duplex (grpc_pass). Lewat proxy_pass HTTP/1.1 nginx
@@ -1556,30 +1561,44 @@ jq '
 # sudah diuji utuh (unduh besar, unggah, banyak sesi berurutan).
 # Sertifikat dibaca dari berkas dengan oneTimeLoading:false, sehingga saat
 # acme.sh memperbarui SSL, Xray membaca sendiri tanpa restart (koneksi aman).
-XHPORT=$(cat /etc/autoscript/xhttp_port 2>/dev/null | tr -d '[:space:]')
-[[ "$XHPORT" =~ ^[0-9]+$ ]] || XHPORT=2096
-if ! jq -e 'any(.inbounds[]; .tag=="vless-xh")' $CFG >/dev/null 2>&1; then
+# Catatan Trojan: Trojan XHTTP sudah diuji dengan biner Xray asli - unduh
+# besar, unggah HTTPS 300 KB & 5 MB, dan banyak sesi berurutan semuanya lolos.
+# Satu-satunya yang gagal adalah unggah HTTP polos dengan tulisan pertama
+# lebih dari 2 KB; itu batasan klien Trojan Xray sendiri (buf: buffer is full)
+# yang sama persis terjadi di Trojan WS, jadi XHTTP tidak menurunkan apa pun.
+for _xp in "vless:2096" "trojan:2083"; do
+  _P=${_xp%%:*}; _DEF=${_xp##*:}
+  _PF=/etc/autoscript/xhttp_port; [[ $_P == trojan ]] && _PF=/etc/autoscript/xhttp_port_trojan
+  XHPORT=$(cat $_PF 2>/dev/null | tr -d '[:space:]')
+  [[ "$XHPORT" =~ ^[0-9]+$ ]] || XHPORT=$_DEF
+  jq -e --arg t "$_P-xh" 'any(.inbounds[]; .tag==$t)' $CFG >/dev/null 2>&1 && continue
   cp -f $CFG $CFG.bak-xh
-  jq --argjson xp "$XHPORT" '
-    ([.inbounds[]|select(.tag=="vless-ws")][0]) as $w
+  jq --argjson xp "$XHPORT" --arg p "$_P" '
+    ([.inbounds[]|select(.tag==($p+"-ws"))][0]) as $w
     | if $w == null then . else
         .inbounds += [ $w
-          | .tag="vless-xh" | .listen="0.0.0.0" | .port=$xp
+          | .tag=($p+"-xh") | .listen="0.0.0.0" | .port=$xp
           | .streamSettings={ network:"xhttp", security:"tls",
               tlsSettings:{ oneTimeLoading:false, alpn:["h2","http/1.1"],
                 certificates:[{ certificateFile:"/etc/autoscript/xray.crt",
                                 keyFile:"/etc/autoscript/xray.key" }] },
-              xhttpSettings:{ path:"/xhvless", mode:"auto" } } ]
+              xhttpSettings:{ path:("/xh"+$p), mode:"auto" } } ]
       end' $CFG > $CFG.tmp && mv $CFG.tmp $CFG
-  if xray run -test -config $CFG >/dev/null 2>&1; then
-    echo "$XHPORT" > /etc/autoscript/xhttp_port
-    echo -e "${GRN}[XHTTP] VLESS XHTTP dipasang di port $XHPORT${NC}"
+  # inbound harus benar-benar ada DAN config harus lolos uji. Kalau jq gagal,
+  # $CFG tidak berubah dan uji xray tetap lolos - tanpa cek ini pesan
+  # "dipasang" bisa muncul padahal tidak ada apa-apa yang terpasang.
+  if jq -e --arg t "$_P-xh" 'any(.inbounds[]?; .tag==$t)' $CFG >/dev/null 2>&1 \
+     && xray run -test -config $CFG >/dev/null 2>&1; then
+    echo "$XHPORT" > $_PF
+    echo -e "${GRN}[XHTTP] ${_P^^} XHTTP dipasang di port $XHPORT${NC}"
   else
     cp -f $CFG.bak-xh $CFG
-    echo -e "${YEL}[XHTTP] Xray di VPS ini belum mendukung XHTTP, fitur dilewati${NC}"
+    rm -f $CFG.tmp
+    echo -e "${YEL}[XHTTP] XHTTP ${_P^^} dilewati (inbound $_P-ws tidak ada atau Xray belum mendukung)${NC}"
   fi
   rm -f $CFG.bak-xh
-fi
+done
+unset _xp _P _DEF _PF XHPORT
 
 # =====================================================
 #  VLESS REALITY (TCP langsung, tanpa nginx & tanpa SSL)
@@ -2041,23 +2060,28 @@ fi
 
 # Penanda XHTTP: link XHTTP baru ditampilkan kalau inbound-nya ada DAN portnya
 # benar-benar sudah mendengarkan. Jadi pembeli tidak pernah menerima link mati.
-XHPORT=$(cat /etc/autoscript/xhttp_port 2>/dev/null | tr -d '[:space:]')
-[[ "$XHPORT" =~ ^[0-9]+$ ]] || XHPORT=2096
-if jq -e 'any(.inbounds[]; .tag=="vless-xh")' $CFG >/dev/null 2>&1; then
-  for _i in 1 2 3 4 5 6; do
-    if ss -tln 2>/dev/null | grep -q ":$XHPORT "; then break; fi
-    sleep 1
-  done
-  if ss -tln 2>/dev/null | grep -q ":$XHPORT "; then
-    touch /etc/autoscript/xhttp_on
-    echo -e "${GRN}[XHTTP] Siap: VLESS XHTTP TLS di port $XHPORT${NC}"
+for _xp in "vless:2096:/etc/autoscript/xhttp_on:/etc/autoscript/xhttp_port" \
+           "trojan:2083:/etc/autoscript/xhttp_on_trojan:/etc/autoscript/xhttp_port_trojan"; do
+  IFS=: read -r _P _DEF _ONF _PF <<< "$_xp"
+  XHPORT=$(cat $_PF 2>/dev/null | tr -d '[:space:]')
+  [[ "$XHPORT" =~ ^[0-9]+$ ]] || XHPORT=$_DEF
+  if jq -e --arg t "$_P-xh" 'any(.inbounds[]; .tag==$t)' $CFG >/dev/null 2>&1; then
+    for _i in 1 2 3 4 5 6; do
+      if ss -tln 2>/dev/null | grep -q ":$XHPORT "; then break; fi
+      sleep 1
+    done
+    if ss -tln 2>/dev/null | grep -q ":$XHPORT "; then
+      touch $_ONF
+      echo -e "${GRN}[XHTTP] Siap: ${_P^^} XHTTP TLS di port $XHPORT${NC}"
+    else
+      rm -f $_ONF
+      echo -e "${YEL}[XHTTP] Port $XHPORT (${_P^^}) belum mendengarkan, link disembunyikan dulu${NC}"
+    fi
   else
-    rm -f /etc/autoscript/xhttp_on
-    echo -e "${YEL}[XHTTP] Port $XHPORT belum mendengarkan, link XHTTP disembunyikan dulu${NC}"
+    rm -f $_ONF
   fi
-else
-  rm -f /etc/autoscript/xhttp_on
-fi
+done
+unset _xp _P _DEF _ONF _PF XHPORT
 
 echo -e "${GRN}==============================================${NC}"
 echo -e "${GRN}   UPDATE SELESAI - $(cat /etc/autoscript/version)${NC}"

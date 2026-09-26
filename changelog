@@ -1,3 +1,31 @@
+v1.29.0
+TROJAN SEKARANG BISA XHTTP
+- Sebelumnya XHTTP hanya untuk VLESS. Sekarang Trojan punya inbound XHTTP
+  sendiri di port 2083 (port HTTPS yang didukung Cloudflare, dan masih
+  kosong di script ini: 443/8443/2053 dipakai nginx, 2087 Reality,
+  2096 VLESS XHTTP).
+- Pola sama seperti VLESS XHTTP: port sendiri, TLS dipegang Xray langsung
+  (tanpa nginx), sertifikat dibaca dari berkas dengan oneTimeLoading:false
+  sehingga pembaruan SSL acme.sh tidak memutus koneksi.
+- Link Trojan XHTTP ikut muncul di tampilan akun, notifikasi Telegram, dan
+  keluaran --link, tapi hanya kalau portnya benar-benar sudah mendengarkan.
+  Jadi pembeli tidak pernah menerima link mati.
+- cekport sekarang menampilkan port TROJAN XHTTP TLS juga.
+- Ikut diperbaiki saat pengujian: kalau jq gagal mengubah config, berkas
+  config tidak berubah sehingga 'xray run -test' tetap lolos, dan pesan
+  "XHTTP dipasang" muncul padahal tidak ada yang terpasang. Sekarang
+  keberadaan inbound ikut diperiksa, jadi pesannya selalu jujur.
+
+HASIL UJI (biner Xray 26.3.27 asli, bukan simulasi)
+- Unggah HTTPS 5 MB lewat Trojan XHTTP: lolos. 8 sesi berurutan: 8/8.
+  Config hasil pemasangan lolos 'xray run -test', dan pemasangan kedua
+  kali tidak menggandakan inbound.
+- Catatan jujur: unggah HTTP polos (tanpa TLS) dengan tulisan pertama
+  lebih dari 2 KB gagal dengan 'buf: buffer is full'. Itu batasan klien
+  Trojan Xray sendiri - diuji di Trojan WS hasilnya gagal persis sama.
+  Jadi XHTTP tidak menurunkan apa pun, dan trafik nyata (HTTPS: browsing,
+  WhatsApp, YouTube, game) tidak terpengaruh.
+
 v1.28.0
 NOTIFIKASI KE BUYER
 - Bentuknya disamakan: judul tebal berikon, satu blok rincian yang rata,

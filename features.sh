@@ -771,6 +771,8 @@ cek_port(){
   [[ "$rp" =~ ^[0-9]+$ ]] && ports+=("$rp|VLESS Reality")
   local xp; xp=$(cat $ASD/xhttp_port 2>/dev/null | tr -d '[:space:]')
   [[ "$xp" =~ ^[0-9]+$ && -f $ASD/xhttp_on ]] && ports+=("$xp|VLESS XHTTP TLS")
+  local xt; xt=$(cat $ASD/xhttp_port_trojan 2>/dev/null | tr -d '[:space:]')
+  [[ "$xt" =~ ^[0-9]+$ && -f $ASD/xhttp_on_trojan ]] && ports+=("$xt|TROJAN XHTTP TLS")
   local listen; listen=$(ss -Hltn 2>/dev/null | awk '{print $4}' | sed 's/.*://')
   printf " ${G}%-6s %-18s %s${N}\n" "PORT" "LAYANAN" "STATUS"
   echo -e "$LINE"
