@@ -127,7 +127,7 @@ while IFS=$'\t' read -r proto user secret exp ipl maxbw usebw status slock; do
     else
       echo "ADD  ssh    $user exp=$exp ip=$ipl st=$st"; nadd=$((nadd+1)); done=$((done+1))
       if [ "$COMMIT" = 1 ]; then
-        useradd -e "$exp" -s /bin/false -M "$user" >/dev/null 2>&1
+        useradd -e "$exp" -s /bin/false -M "$user" >/dev/null 2>&1 || useradd -N -e "$exp" -s /bin/false -M "$user" >/dev/null 2>&1
         echo "$user:$secret" | chpasswd >/dev/null 2>&1
         grep -qx "$user $exp $ipl $st" "$ASD/db/ssh.db" 2>/dev/null || echo "$user $exp $ipl $st" >> "$ASD/db/ssh.db"
       fi
