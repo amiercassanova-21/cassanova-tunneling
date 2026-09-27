@@ -514,19 +514,43 @@ BI=$(cat /etc/autoscript/backup_interval 2>/dev/null)
 if [[ "$BI" == "0" ]]; then
   rm -f /etc/cron.d/cas-backup            # buyer mematikan auto backup
 elif [[ -z "$BI" ]]; then
-  echo 1440 > /etc/autoscript/backup_interval
-  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 3 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup
+  echo 120 > /etc/autoscript/backup_interval
+  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */2 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup
   chmod 644 /etc/cron.d/cas-backup 2>/dev/null
 elif [[ ! -s /etc/cron.d/cas-backup ]]; then
   # pengaturan ada tapi file cron hilang -> bangun ulang sesuai pilihan
   case $BI in
     60)   { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 * * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
+    120)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */2 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
     180)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */3 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
     360)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */6 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
     720)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */12 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
     *)    { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 3 * * * root /usr/local/sbin/cas-autobackup"; } > /etc/cron.d/cas-backup ;;
   esac
   chmod 644 /etc/cron.d/cas-backup 2>/dev/null
+fi
+
+# jadwal LAPORAN USER LOGIN: default tiap 1 jam (hormati pilihan buyer).
+# cas-report otomatis diam kalau bot belum diatur, jadi cron default aman.
+RI=$(cat /etc/autoscript/report_interval 2>/dev/null)
+if [[ "$RI" == "0" ]]; then
+  rm -f /etc/cron.d/cas-report            # buyer mematikan laporan
+elif [[ -z "$RI" ]]; then
+  echo 60 > /etc/autoscript/report_interval
+  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 * * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report
+  chmod 644 /etc/cron.d/cas-report 2>/dev/null
+elif [[ ! -s /etc/cron.d/cas-report ]]; then
+  # pengaturan ada tapi file cron hilang -> bangun ulang sesuai pilihan
+  case $RI in
+    30)   { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "*/30 * * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report ;;
+    120)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */2 * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report ;;
+    180)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */3 * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report ;;
+    360)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */6 * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report ;;
+    720)  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 */12 * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report ;;
+    1440) { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 3 * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report ;;
+    *)    { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 * * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report ;;
+  esac
+  chmod 644 /etc/cron.d/cas-report 2>/dev/null
 fi
 
 echo -e "${GRN}Modul Setup Bot selesai.${NC}"

@@ -8,6 +8,14 @@ export DEBIAN_FRONTEND=noninteractive
 ASD=/etc/autoscript
 apt install -y speedtest-cli zip unzip btop >/dev/null 2>&1
 
+# Default AUTO REBOOT jam 04:00 (dipasang sekali; setelah buyer atur/matikan lewat
+# menu, ditandai reboot_configured supaya update tidak menimpanya lagi).
+if [[ ! -f $ASD/reboot_configured ]]; then
+  echo "0 4 * * * root /sbin/reboot" > /etc/cron.d/cas-reboot
+  chmod 644 /etc/cron.d/cas-reboot
+  echo 1 > $ASD/reboot_configured
+fi
+
 # =====================================================
 #  UPDATE SCRIPT
 # =====================================================
@@ -505,8 +513,9 @@ check_bandwidth(){ header "CHECK BANDWIDTH"; command -v vnstat >/dev/null && vns
 set_reboot(){
   header "AUTO REBOOT"
   local cur o h
-  cur=$(grep -oE '[0-9]+:[0-9]+' /etc/cron.d/cas-reboot 2>/dev/null | head -1)
-  echo -e " Jadwal sekarang : ${Y}${cur:-belum diatur}${N}\n"
+  cur=$(awk '/reboot/{print $2; exit}' /etc/cron.d/cas-reboot 2>/dev/null)
+  [[ "$cur" =~ ^[0-9]+$ ]] && cur=$(printf '%02d:00' "$cur") || cur=""
+  echo -e " Jadwal sekarang : ${Y}${cur:-belum diatur / mati}${N}\n"
   echo -e " ${C}1.)${N} Set jam auto reboot (harian)"
   echo -e " ${C}2.)${N} Matikan auto reboot"
   echo -e " ${C}3.)${N} Kembali"
@@ -514,8 +523,9 @@ set_reboot(){
   case $o in
     1) read -rp "Jam (0-23) : " h; num_ok "$h" && (( h<24 )) || { msg "${R}Jam salah${N}"; return; }
        echo "0 $h * * * root /sbin/reboot" > /etc/cron.d/cas-reboot; chmod 644 /etc/cron.d/cas-reboot
-       msg "${G}Auto reboot diset tiap jam $h:00${N}" ;;
-    2) rm -f /etc/cron.d/cas-reboot; msg "${G}Auto reboot dimatikan${N}" ;;
+       echo 1 > $ASD/reboot_configured
+       msg "${G}Auto reboot diset tiap jam $(printf '%02d:00' "$h")${N}" ;;
+    2) rm -f /etc/cron.d/cas-reboot; echo 1 > $ASD/reboot_configured; msg "${G}Auto reboot dimatikan${N}" ;;
   esac
 }
 

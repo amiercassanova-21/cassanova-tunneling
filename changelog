@@ -1,3 +1,24 @@
+v1.45.0
+DEFAULT BAWAAN: AUTO REBOOT, LAPORAN LOGIN, AUTO BACKUP
+- Auto Reboot: default AKTIF tiap 04:00 (harian). Bisa diubah/dimatikan lewat
+  Features > Set Date Auto Reboot. Ada penanda (reboot_configured) supaya kalau
+  buyer mengubah/mematikan, update berikutnya tidak menimpanya.
+  Tampilan jam di menu juga diperbaiki (dulu tak muncul kalau cron tanpa ":" ).
+- Laporan User Login: default AKTIF tiap 1 jam (cron cas-report). Aman walau bot
+  belum diatur (cas-report otomatis diam sampai bot dipasang). Bisa diubah/matikan
+  lewat menu Bot > Laporan User Login.
+- Auto Backup: default diubah dari 24 jam (03:00) menjadi TIAP 2 JAM. Bisa diubah/
+  matikan lewat menu Bot > Jadwal Auto Backup. (Backup terkirim ke Telegram hanya
+  jika notifikasi bot aktif.)
+- Semua default hanya berlaku untuk pemasangan pertama; pilihan buyer dihormati
+  saat updatesc (pola cek file interval: kosong=pasang default, 0=dimatikan buyer,
+  ada nilai=biarkan).
+
+HASIL UJI
+- 10 skenario disimulasikan: fresh install (reboot 04:00, report 60m, backup 120m),
+  buyer mematikan (tidak dinyalakan ulang), buyer set nilai lain (cron dibangun
+  ulang sesuai pilihan). Semua lulus. Lolos bash -n (features.sh, bot.sh, m-feature, m-bot).
+
 v1.44.0
 MENU: TAMBAH "CEK VPS (MONITORING)" DI FITUR
 - Menu Features kini punya bagian MONITORING (opsi 15) -> submenu:
