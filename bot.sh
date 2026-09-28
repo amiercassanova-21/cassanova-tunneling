@@ -310,6 +310,34 @@ set_report(){
   msg "${G}Laporan user login dikirim $(fmt_int $m)${N}"
 }
 
+set_healthalert(){
+  header "ALERT KESEHATAN VPS"
+  local st lf dm o v
+  st=$(cat $ASD/healthalert 2>/dev/null); [[ -z "$st" ]] && st=on
+  lf=$(cat $ASD/ha_loadfactor 2>/dev/null); [[ "$lf" =~ ^[0-9]+$ ]] || lf=150
+  dm=$(cat $ASD/ha_diskmax 2>/dev/null); [[ "$dm" =~ ^[0-9]+$ ]] || dm=90
+  echo -e " Status       : ${Y}$st${N}"
+  echo -e " Ambang Load  : ${Y}${lf}%${N} dari jumlah core"
+  echo -e " Ambang Disk  : ${Y}${dm}%${N}\n"
+  echo -e " ${C}1.)${N} Aktifkan"
+  echo -e " ${C}2.)${N} Matikan"
+  echo -e " ${C}3.)${N} Set ambang Load (% dari core, mis. 150)"
+  echo -e " ${C}4.)${N} Set ambang Disk (%)"
+  echo -e " ${C}5.)${N} Kirim tes alert sekarang"
+  echo -e " ${C}6.)${N} Kembali\n"
+  read -rp "Pilih : " o
+  case $o in
+    1) echo on > $ASD/healthalert
+       { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "*/10 * * * * root /usr/local/sbin/cas-healthalert"; } > /etc/cron.d/cas-healthalert
+       chmod 644 /etc/cron.d/cas-healthalert; msg "${G}Alert kesehatan diaktifkan${N}" ;;
+    2) echo off > $ASD/healthalert; rm -f /etc/cron.d/cas-healthalert; msg "${G}Alert kesehatan dimatikan${N}" ;;
+    3) read -rp "Ambang Load (% dari core) : " v; num_ok "$v" && { echo "$v" > $ASD/ha_loadfactor; msg "${G}Tersimpan${N}"; } || msg "${R}Angka salah${N}" ;;
+    4) read -rp "Ambang Disk (%) : " v; num_ok "$v" && (( v<=100 )) && { echo "$v" > $ASD/ha_diskmax; msg "${G}Tersimpan${N}"; } || msg "${R}Angka salah${N}" ;;
+    5) echo -e "${Y}Mengirim tes...${N}"; /usr/local/sbin/cas-healthalert --test; msg "${G}Tes dikirim, cek Telegram${N}" ;;
+    6) return ;;
+  esac
+}
+
 change_bot(){
   load; [[ -z "$BOT_TOKEN" ]] && { msg "${R}Belum ada bot, gunakan menu 1${N}"; return; }
   make_bot
@@ -336,11 +364,12 @@ while true; do
   echo -e " ${C}5.)${N}  Laporan User Login (interval)"
   echo -e " ${C}6.)${N}  Jadwal Auto Backup"
   echo -e " ${C}7.)${N}  Mode Kirim Backup (File / Link)"
-  echo -e " ${C}8.)${N}  Back to Menu"
+  echo -e " ${C}8.)${N}  Alert Kesehatan VPS"
+  echo -e " ${C}9.)${N}  Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-8 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-9 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "make_bot" ;;
@@ -350,7 +379,8 @@ while true; do
     5) cas_run "set_report" ;;
     6) cas_run "set_backup" ;;
     7) cas_run "set_bklink" ;;
-    8) exit 0 ;;
+    8) cas_run "set_healthalert" ;;
+    9) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
@@ -506,6 +536,112 @@ BOT_TOKEN=""; CHAT_ID=""; NOTIFY="off"
 exec /usr/local/sbin/cas-backup-run --quiet
 EOF
 chmod +x /usr/local/sbin/cas-autobackup
+
+# ---------- Alert Kesehatan VPS (peringatan otomatis ke Telegram) ----------
+cat > /usr/local/sbin/cas-health <<'EOF'
+#!/bin/bash
+. /usr/local/lib/autoscript/lib.sh
+BOT_TOKEN=""; CHAT_ID=""
+[[ -f $ASD/bot ]] && . $ASD/bot
+[[ "$(cat $ASD/health_alert 2>/dev/null)" == off ]] && exit 0
+[[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && exit 0
+DOMAIN=$(cat $ASD/domain 2>/dev/null)
+CORES=$(nproc)
+LMULT=$(cat $ASD/health_loadmult 2>/dev/null); [[ "$LMULT" =~ ^[0-9]+$ && $LMULT -gt 0 ]] || LMULT=2
+DISKMAX=$(cat $ASD/health_diskmax 2>/dev/null); [[ "$DISKMAX" =~ ^[0-9]+$ ]] || DISKMAX=90
+RAMMAX=$(cat $ASD/health_rammax 2>/dev/null); [[ "$RAMMAX" =~ ^[0-9]+$ ]] || RAMMAX=95
+STATE=$ASD/health_state; touch "$STATE"
+load5=$(cut -d' ' -f2 /proc/loadavg)
+loadthr=$((CORES*LMULT))
+diskp=$(df / | awk 'NR==2{gsub("%","",$5);print $5}')
+ramp=$(free | awk '/^Mem:/{printf "%d", $3*100/$2}')
+IP=$(jq -r '.ip//"-"' $ASD/ipinfo.json 2>/dev/null)
+send(){ curl -s --max-time 20 -o /dev/null --data-urlencode "chat_id=$CHAT_ID" \
+  --data-urlencode "parse_mode=HTML" --data-urlencode "disable_web_page_preview=true" \
+  --data-urlencode "text=$1" "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"; }
+chk(){ local key="$1" met="$2" msg="$3" was
+  was=$(grep -c "^$key$" "$STATE")
+  if [[ "$met" == 1 ]]; then [[ "$was" == 0 ]] && { send "$msg"; echo "$key" >> "$STATE"; }
+  else [[ "$was" != 0 ]] && { sed -i "/^$key$/d" "$STATE"; send "✅ <b>PULIH</b> · $DOMAIN"$'\n'"$key kembali normal."; }
+  fi; }
+HDR="⚠️ <b>ALERT VPS</b> · $DOMAIN (IP $IP)"
+loadhigh=$(awk -v l="$load5" -v t="$loadthr" 'BEGIN{print (l+0>=t)?1:0}')
+chk load "$loadhigh" "$HDR
+🔥 Load 5 menit: <b>$load5</b> (batas $loadthr · $CORES core)
+CPU sedang berat. Cek: <code>cekvps</code>"
+[[ "$diskp" =~ ^[0-9]+$ && "$diskp" -ge "$DISKMAX" ]] && dm=1 || dm=0
+chk disk "$dm" "$HDR
+💾 Disk: <b>${diskp}%</b> (batas ${DISKMAX}%)
+Segera bersihkan / cek backup lama."
+[[ "$ramp" =~ ^[0-9]+$ && "$ramp" -ge "$RAMMAX" ]] && rm=1 || rm=0
+chk ram "$rm" "$HDR
+🧠 RAM: <b>${ramp}%</b> (batas ${RAMMAX}%)"
+EOF
+chmod +x /usr/local/sbin/cas-health
+# default alert kesehatan AKTIF (hormati pilihan buyer)
+HA=$(cat /etc/autoscript/health_alert 2>/dev/null)
+if [[ "$HA" == off ]]; then
+  rm -f /etc/cron.d/cas-health
+else
+  [[ -f /etc/autoscript/health_alert ]] || echo on > /etc/autoscript/health_alert
+  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "*/15 * * * * root /usr/local/sbin/cas-health"; } > /etc/cron.d/cas-health
+  chmod 644 /etc/cron.d/cas-health 2>/dev/null
+fi
+
+# ---------- Alert Kesehatan VPS ke Telegram ----------
+cat > /usr/local/sbin/cas-healthalert <<'EOF'
+#!/bin/bash
+. /usr/local/lib/autoscript/lib.sh 2>/dev/null
+BOT_TOKEN=""; CHAT_ID=""; NOTIFY="off"
+[[ -f $ASD/bot ]] && . $ASD/bot
+[[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && exit 0
+DOMAIN=$(cat $ASD/domain 2>/dev/null)
+send(){ curl -s --max-time 20 -o /dev/null --data-urlencode "chat_id=$CHAT_ID" \
+  --data-urlencode "parse_mode=HTML" --data-urlencode "disable_web_page_preview=true" \
+  --data-urlencode "text=$1" "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"; }
+# mode tes: kirim contoh alert lalu keluar
+if [[ "$1" == --test ]]; then
+  send "🔔 <b>TES ALERT KESEHATAN</b>
+<b>$DOMAIN</b>
+Kalau pesan ini masuk, alert kesehatan berfungsi."
+  exit 0
+fi
+[[ "$NOTIFY" != on ]] && exit 0
+[[ "$(cat $ASD/healthalert 2>/dev/null)" == off ]] && exit 0
+LOADF=$(cat $ASD/ha_loadfactor 2>/dev/null); [[ "$LOADF" =~ ^[0-9]+$ ]] || LOADF=150   # % dari jumlah core
+DISKMAX=$(cat $ASD/ha_diskmax 2>/dev/null);  [[ "$DISKMAX" =~ ^[0-9]+$ ]] || DISKMAX=90
+RAMMAX=$(cat $ASD/ha_rammax 2>/dev/null);     [[ "$RAMMAX" =~ ^[0-9]+$ ]] || RAMMAX=90
+COOLDOWN=$(cat $ASD/ha_cooldown 2>/dev/null); [[ "$COOLDOWN" =~ ^[0-9]+$ ]] || COOLDOWN=10800  # 3 jam
+STATE=$ASD/ha_state
+CORES=$(nproc)
+LOAD5=$(cut -d' ' -f2 /proc/loadavg)
+loadpct=$(awk -v l="$LOAD5" -v c="$CORES" 'BEGIN{printf "%d",(l/c)*100}')
+diskp=$(df / | awk 'NR==2{gsub("%","",$5);print $5}')
+read MT MU < <(free -m|awk '/^Mem:/{print $2,$3}'); ramp=0; [[ "$MT" =~ ^[0-9]+$ && $MT -gt 0 ]] && ramp=$((MU*100/MT))
+probs=""
+(( loadpct >= LOADF )) && probs+="• Load tinggi : ${LOAD5}  (CPU ${CORES} core)"$'\n'
+(( diskp  >= DISKMAX )) && probs+="• Disk penuh  : ${diskp}%"$'\n'
+(( ramp   >= RAMMAX ))  && probs+="• RAM tinggi  : ${ramp}%"$'\n'
+now=$(date +%s)
+laststate=$(awk 'NR==1{print $1}' "$STATE" 2>/dev/null)
+lastts=$(awk 'NR==1{print $2}' "$STATE" 2>/dev/null); [[ "$lastts" =~ ^[0-9]+$ ]] || lastts=0
+if [[ -n "$probs" ]]; then
+  if [[ "$laststate" != alert ]] || (( now - lastts >= COOLDOWN )); then
+    send "⚠️ <b>PERINGATAN VPS</b>
+<b>$DOMAIN</b>
+<pre>$probs</pre>Cek detail: ketik <code>cekvps</code> di VPS."
+    echo "alert $now" > "$STATE"
+  fi
+else
+  if [[ "$laststate" == alert ]]; then
+    send "✅ <b>VPS kembali normal</b>
+<b>$DOMAIN</b>
+Load ${LOAD5} · Disk ${diskp}% · RAM ${ramp}%"
+  fi
+  echo "ok $now" > "$STATE"
+fi
+EOF
+chmod +x /usr/local/sbin/cas-healthalert
 # jadwal auto backup: hormati pilihan buyer, jangan ditimpa saat update
 [[ -f /etc/autoscript/backup_mode ]] || echo both > /etc/autoscript/backup_mode
 [[ -f /etc/autoscript/backup_days ]] || echo 1    > /etc/autoscript/backup_days
@@ -551,6 +687,16 @@ elif [[ ! -s /etc/cron.d/cas-report ]]; then
     *)    { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "0 * * * * root /usr/local/sbin/cas-report"; } > /etc/cron.d/cas-report ;;
   esac
   chmod 644 /etc/cron.d/cas-report 2>/dev/null
+fi
+
+# ALERT KESEHATAN VPS: default AKTIF, cek tiap 10 menit (hormati pilihan buyer).
+HA=$(cat /etc/autoscript/healthalert 2>/dev/null)
+if [[ "$HA" == off ]]; then
+  rm -f /etc/cron.d/cas-healthalert       # buyer mematikan alert
+else
+  [[ -z "$HA" ]] && echo on > /etc/autoscript/healthalert
+  { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "*/10 * * * * root /usr/local/sbin/cas-healthalert"; } > /etc/cron.d/cas-healthalert
+  chmod 644 /etc/cron.d/cas-healthalert 2>/dev/null
 fi
 
 echo -e "${GRN}Modul Setup Bot selesai.${NC}"

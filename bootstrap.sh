@@ -14,7 +14,8 @@ RED='\e[31m'; GRN='\e[32m'; YEL='\e[33m'; NC='\e[0m'
 if [[ -z "${CAS_KEY:-}" && "${CAS_TRIAL:-}" != "1" ]]; then
   echo -e "${RED}Link install tidak sah (CAS_KEY kosong)${NC}"; exit 1
 fi
-RAW="https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main"
+# Ambil file lewat Worker (repo private + watermark), bukan dari GitHub publik.
+RAW="$CAS_LICENSE/raw"
 
 echo -e "${GRN}=== CASSANOVA TUNNELING INSTALLER ===${NC}"
 echo -e "Menyiapkan paket dasar..."

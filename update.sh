@@ -6,14 +6,16 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.45.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.47.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
 
 # ---- channel & snapshot (untuk update tanpa putus koneksi) ----
 BRANCH=$(cat /etc/autoscript/channel 2>/dev/null); BRANCH=${BRANCH:-main}
-BASE=https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/$BRANCH
+# Ambil file lewat Worker (repo private + watermark). Channel dikirim via ?ref=.
+CAS_LIC="${CAS_LICENSE:-$(cat /etc/autoscript/license_url 2>/dev/null)}"
+BASE="$CAS_LIC/raw"
 export CAS_BASE=$BASE
 XCFG=/usr/local/etc/xray/config.json
 H_XRAY_OLD=$(md5sum $XCFG 2>/dev/null | cut -d' ' -f1)
@@ -2238,18 +2240,18 @@ grep -q "menu info" /root/.profile || echo '[[ -t 1 ]] && /usr/local/sbin/menu i
 
 # ---- Modul SSH ----
 echo -e "${GRN}[SSH] Memasang modul SSH...${NC}"
-wget -qO /root/ssh.sh "$BASE/ssh.sh?t=$(date +%s)" && bash /root/ssh.sh; rm -f /root/ssh.sh
+wget -qO /root/ssh.sh "$BASE/ssh.sh?ref=$BRANCH&t=$(date +%s)" && bash /root/ssh.sh; rm -f /root/ssh.sh
 # ---- Modul Hysteria2 (mandiri, terpisah dari All Protocol) ----
 echo -e "${GRN}[HY2] Memasang modul Hysteria2...${NC}"
-wget -qO /root/hy2.sh "$BASE/hy2.sh?t=$(date +%s)" && bash /root/hy2.sh; rm -f /root/hy2.sh
+wget -qO /root/hy2.sh "$BASE/hy2.sh?ref=$BRANCH&t=$(date +%s)" && bash /root/hy2.sh; rm -f /root/hy2.sh
 
 # ---- Modul Features + Brand Name ----
 echo -e "${GRN}[FEATURES] Memasang modul Features & Brand Name...${NC}"
-wget -qO /root/features.sh "$BASE/features.sh?t=$(date +%s)" && bash /root/features.sh; rm -f /root/features.sh
+wget -qO /root/features.sh "$BASE/features.sh?ref=$BRANCH&t=$(date +%s)" && bash /root/features.sh; rm -f /root/features.sh
 
 # ---- Modul Setup Bot ----
 echo -e "${GRN}[BOT] Memasang modul Setup Bot...${NC}"
-wget -qO /root/bot.sh "$BASE/bot.sh?t=$(date +%s)" && bash /root/bot.sh; rm -f /root/bot.sh
+wget -qO /root/bot.sh "$BASE/bot.sh?ref=$BRANCH&t=$(date +%s)" && bash /root/bot.sh; rm -f /root/bot.sh
 # Xray hanya di-restart kalau config-nya benar-benar berubah
 if xray run -test -config $CFG >/dev/null 2>&1; then
   if [[ "$(md5sum $CFG | cut -d' ' -f1)" != "$H_XRAY_OLD" ]]; then

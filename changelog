@@ -1,3 +1,68 @@
+v1.47.0
+KEAMANAN: PENGIRIMAN FILE LEWAT WORKER (REPO PRIVATE) + WATERMARK
+- Semua file SC kini diambil lewat Worker (endpoint /raw/<file>), bukan lagi dari
+  raw.githubusercontent publik. Worker mengambil file dari repo PRIVATE memakai
+  GitHub token (disimpan hanya di Worker Secret), lalu menyisipkan WATERMARK
+  per-buyer (client|ip|exp|tanggal) pada tiap file .sh yang dikirim.
+- Akses /raw digate lisensi: IP tak berlisensi / kedaluwarsa DITOLAK (403).
+  bootstrap.sh sengaja tetap boleh tanpa lisensi (entry point alur trial).
+- File data (version, changelog) dikirim apa adanya (tanpa watermark) agar
+  pengecekan versi tetap akurat.
+- Channel main/beta didukung via ?ref= (dibatasi main|beta di Worker).
+- Script yang diubah: bootstrap.sh, install.sh, update.sh, features.sh (cas-update)
+  -> semua BASE mengarah ke <license_url>/raw. worker.js: fungsi handleRaw + rute.
+
+CATATAN DEPLOY (WAJIB URUT):
+  1) Deploy worker.js baru + set Secret GH_TOKEN (repo MASIH publik).
+  2) Push v1.47.0 ke repo, uji install + updatesc di Test SC.
+  3) Pastikan VPS produksi sudah updatesc ke v1.47.0.
+  4) BARU jadikan repo PRIVATE. (Lihat PANDUAN-KEAMANAN-WORKER.md)
+
+HASIL UJI
+- handleRaw diuji (mock KV+fetch): licensed .sh dapat watermark; IP expired &
+  tanpa-IP ditolak 403; bootstrap boleh tanpa lisensi; version tanpa watermark;
+  path traversal ditangkal. node --check worker.js lolos. Semua script lolos bash -n.
+
+v1.46.0
+ALERT KESEHATAN VPS KE TELEGRAM
+- Perintah baru cas-health: cek kondisi VPS tiap 15 menit, kirim peringatan ke
+  Telegram owner kalau:
+    • Load 5 menit >= (jumlah core x 2)   -> CPU berat
+    • Disk / >= 90%
+    • RAM >= 95%
+- Anti-spam: satu peringatan saat kondisi MULAI bermasalah; tidak diulang selama
+  masih bermasalah; kirim notif "PULIH" saat kembali normal.
+- Default AKTIF (hormati pilihan buyer via file health_alert; update tidak menimpa).
+  Aman walau bot belum diatur (cas-health otomatis diam).
+- Ambang bisa diatur lewat file: health_loadmult (default 2), health_diskmax (90),
+  health_rammax (95).
+- Toggle ON/OFF di menu: Features > Cek VPS (Monitoring) > Alert Kesehatan ke Telegram.
+
+HASIL UJI
+- Deteksi + anti-spam disimulasikan (kirim saat naik, diam saat masih tinggi,
+  kirim lagi setelah pulih-lalu-naik). cas-health diuji: diam saat off/bot kosong,
+  kirim saat ambang terlewati, state tercatat. Lolos bash -n (bot.sh, features.sh,
+  cas-health, m-feature, m-bot).
+
+v1.46.0
+ALERT KESEHATAN VPS KE TELEGRAM (proaktif)
+- Bot otomatis mengirim peringatan ke owner kalau kondisi VPS memburuk:
+    • Load tinggi (default ambang 150% dari jumlah core)
+    • Disk penuh (default >= 90%)
+    • RAM tinggi (default >= 90%)
+- Anti-spam: sekali kirim saat mulai bermasalah, lalu diam; ulang hanya setelah
+  cooldown (default 3 jam). Saat sudah normal lagi, kirim notice "kembali normal".
+- Cek tiap 10 menit (cron cas-healthalert). Default AKTIF; hanya berkirim kalau
+  bot & notifikasi sudah diaktifkan (aman kalau bot belum diatur).
+- Menu baru: Bot > (8) Alert Kesehatan VPS -> aktif/matikan, set ambang Load,
+  set ambang Disk, dan "Kirim tes alert sekarang". "Back to Menu" jadi opsi 9.
+- Hormati pilihan buyer saat update (file healthalert: kosong=default on, off=mati).
+
+HASIL UJI
+- 8 skenario: load tinggi->alert, cooldown->diam, cooldown lewat->alert lagi,
+  normal->notice pulih, tetap normal->diam, disk 95%->alert, off->diam, --test->kirim.
+  Semua lulus. Lolos bash -n (bot.sh, m-bot, cas-healthalert).
+
 v1.45.0
 DEFAULT BAWAAN: AUTO REBOOT, LAPORAN LOGIN, AUTO BACKUP
 - Auto Reboot: default AKTIF tiap 04:00 (harian). Bisa diubah/dimatikan lewat

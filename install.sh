@@ -42,7 +42,7 @@ export DEBIAN_FRONTEND=noninteractive
 mkdir -p /etc/autoscript/db /var/log/xray /var/www/html
 echo "$DOMAIN" > /etc/autoscript/domain
 echo "$BRAND"  > /etc/autoscript/brand
-echo "v1.45.0"  > /etc/autoscript/version
+echo "v1.47.0"  > /etc/autoscript/version
 touch /etc/autoscript/db/vless.db /etc/autoscript/db/vmess.db /etc/autoscript/db/trojan.db
 
 # ---------- Paket dasar ----------
@@ -172,9 +172,10 @@ systemctl enable xray nginx >/dev/null 2>&1
 
 # ---------- Pasang menu & fitur (update.sh) ----------
 echo -e "${GRN}[6/6] Memasang menu & fitur...${NC}"
-wget -qO /root/update.sh https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling/main/update.sh
+CAS_LIC="${CAS_LICENSE:-$(cat /etc/autoscript/license_url 2>/dev/null)}"
+wget -qO /root/update.sh "$CAS_LIC/raw/update.sh"
 if [[ ! -s /root/update.sh ]]; then
-  echo -e "${RED}Gagal mengunduh update.sh dari GitHub${NC}"
+  echo -e "${RED}Gagal mengunduh update.sh (cek lisensi/Worker)${NC}"
   exit 1
 fi
 bash /root/update.sh

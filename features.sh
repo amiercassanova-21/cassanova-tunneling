@@ -34,16 +34,16 @@ fi
 trap 'rm -f /tmp/cas-update-run.$$' EXIT
 
 ASD=/etc/autoscript
-RAW=https://raw.githubusercontent.com/amiercassanova-21/cassanova-tunneling
 BRANCH=$(cat $ASD/channel 2>/dev/null); BRANCH=${BRANCH:-main}
-BASE=$RAW/$BRANCH
+# Ambil file lewat Worker (repo private + watermark). Channel dikirim via ?ref=.
+BASE="$(cat $ASD/license_url 2>/dev/null)/raw"
 LOG=/var/log/cas-update.log
 G='\e[32m'; R='\e[31m'; Y='\e[33m'; C='\e[36m'; P='\e[35m'; N='\e[0m'
 AUTO=$(cat $ASD/autoupdate 2>/dev/null); AUTO=${AUTO:-off}
 cur=$(cat $ASD/version 2>/dev/null)
 
-fetch_latest(){ curl -s --max-time 15 "$BASE/version?t=$(date +%s)" | tr -d '[:space:]'; }
-fetch_changelog(){ curl -s --max-time 15 "$BASE/changelog?t=$(date +%s)" | head -n 15; }
+fetch_latest(){ curl -s --max-time 15 "$BASE/version?ref=$BRANCH&t=$(date +%s)" | tr -d '[:space:]'; }
+fetch_changelog(){ curl -s --max-time 15 "$BASE/changelog?ref=$BRANCH&t=$(date +%s)" | head -n 15; }
 newer(){ [[ -n "$1" && "$1" != "$2" && "$(printf '%s\n%s\n' "${1#v}" "${2#v}" | sort -V | tail -n1)" == "${1#v}" ]]; }
 
 # Progress bar animasi untuk update manual: baca output update.sh dari stdin,
@@ -139,7 +139,7 @@ do_update(){ # $1 = auto(1/0) ; return 0 sukses
     usr/local/sbin/m-brand usr/local/sbin/m-bot usr/local/sbin/running usr/local/sbin/xray-guard \
     usr/local/sbin/cas-update usr/local/sbin/m-hy2 usr/local/bin/ws-ssh.py etc/hysteria etc/cron.d 2>/dev/null
   # 2) unduh & cek sintaks
-  if ! wget -qO $tmp/update.sh "$BASE/update.sh?t=$(date +%s)" || [[ ! -s $tmp/update.sh ]] || ! bash -n $tmp/update.sh; then
+  if ! wget -qO $tmp/update.sh "$BASE/update.sh?ref=$BRANCH&t=$(date +%s)" || [[ ! -s $tmp/update.sh ]] || ! bash -n $tmp/update.sh; then
     echo "Gagal unduh / file update rusak, update dibatalkan"; return 1
   fi
   # 3) jalankan update
@@ -957,19 +957,28 @@ monitoring(){
   while true; do
     header "MONITORING"
     echo -e "\n ${Y}Pantau kondisi VPS${N}\n"
+    local hs; [[ "$(cat $ASD/health_alert 2>/dev/null)" == off ]] && hs="${R}OFF${N}" || hs="${G}ON${N}"
     echo -e " ${C}1.)${N} Cek VPS (ringkas)"
     echo -e " ${C}2.)${N} Cek VPS Live (realtime)"
     echo -e " ${C}3.)${N} btop (monitor lengkap)"
-    echo -e " ${C}4.)${N} Kembali"
+    echo -e " ${C}4.)${N} Alert Kesehatan ke Telegram [$hs]"
+    echo -e " ${C}5.)${N} Kembali"
     echo -e "$LINE\n"
     trap 'return' INT
-    read -rp "$(echo -e "${G}Select From Options [1-4] : ${N}")" m
+    read -rp "$(echo -e "${G}Select From Options [1-5] : ${N}")" m
     trap ':' INT
     case $m in
       1) /usr/local/sbin/cekvps; read -rp "$(echo -e "\n${P}Press Enter for Back to Menu${N}")" ;;
       2) ( trap 'exit 0' INT; /usr/local/sbin/cekvps live ) ;;
       3) command -v btop >/dev/null 2>&1 || apt install -y btop >/dev/null 2>&1; btop ;;
-      4) return ;;
+      4) if [[ "$(cat $ASD/health_alert 2>/dev/null)" == off ]]; then
+           echo on > $ASD/health_alert
+           { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "*/15 * * * * root /usr/local/sbin/cas-health"; } > /etc/cron.d/cas-health
+           chmod 644 /etc/cron.d/cas-health; msg "${G}Alert kesehatan: ON (cek tiap 15 menit)${N}"
+         else
+           echo off > $ASD/health_alert; rm -f /etc/cron.d/cas-health; msg "${G}Alert kesehatan: OFF${N}"
+         fi ;;
+      5) return ;;
       *) msg "${R}Pilihan salah${N}" ;;
     esac
   done
