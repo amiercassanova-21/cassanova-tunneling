@@ -1,3 +1,19 @@
+v1.48.10
+HALAMAN /akun GAYA BOT + CUSTOM OUTPUT BT
+[#3] Halaman rincian akun web: https://DOMAIN/akun/<uuid> menampilkan detail
+  akun bergaya output bot (kotak gelap monospace, tap-salin, semua protokol +
+  subscription). Footer domain pada notif detail akun (create/recovery/cek
+  config) DIGANTI link "HALAMAN AKUN" di dalam pesan (tidak ada lagi domain
+  polos di bawah). Dilayani service :8099 (route /akun) + location Nginx baru.
+[#4] Custom Output BT (Features -> SYSTEM -> "Custom Output BT"):
+  - Set ADDRESS custom untuk link (mis. x1.amier.cassanova.biz.id) -> HANYA
+    bagian address (@...) yang diganti; host & sni TETAP domain asli (teknik
+    bug/CDN host). TLS tetap valid.
+  - Set REMARK suffix (mis. " «1»🔵") -> ditambahkan ke remark asli, otomatis
+    di-URL-encode (aman untuk spasi/emoji/«»).
+  - ON/OFF + Reset. Saat ON berlaku di semua output: terminal, bot, subscription.
+CATATAN: fitur ini membuat/ubah halaman web & link -> uji di Test SC dulu.
+
 v1.48.9
 PINDAH MENU ON/OFF & RESPONSE WS KE FEATURES + OUTPUT CEK CONFIG RAPI
 - ON/OFF Protokol: dipindah dari menu per-protokol -> Features -> SYSTEM

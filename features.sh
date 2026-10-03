@@ -1099,6 +1099,48 @@ onoff_proto(){
   done
 }
 
+# ---- Custom Output BT: address & remark custom untuk link output ----
+# Saat ON: address di link diganti custom (host & sni TETAP domain asli -> teknik
+# bug/CDN host); remark = remark asli + suffix. Berlaku di terminal, bot, &
+# subscription (dibaca mk_link di m-xray). File: custom_addr/custom_remark/custom_out.
+custom_out(){
+  local AF=$ASD/custom_addr RF=$ASD/custom_remark OF=$ASD/custom_out st
+  while true; do
+    clear; header "CUSTOM OUTPUT BT"
+    [[ "$(cat $OF 2>/dev/null)" == on ]] && st="${G}ON${N}" || st="${R}OFF${N}"
+    echo -e "\n Status         : $st"
+    echo -e " Address custom : ${O}$(cat $AF 2>/dev/null || echo '(kosong = pakai domain asli)')${N}"
+    echo -e " Remark suffix  : ${O}$(cat $RF 2>/dev/null || echo '(kosong)')${N}"
+    echo -e "\n ${Y}ON: address link diganti custom; host & sni tetap domain asli;"
+    echo -e " remark = remark asli + suffix. Berlaku terminal, bot, & subscription.${N}"
+    echo -e "$LINE"
+    echo -e " ${C}1.)${N} Set Address custom"
+    echo -e " ${C}2.)${N} Set Remark suffix"
+    echo -e " ${C}3.)${N} Set ON"
+    echo -e " ${C}4.)${N} Set OFF"
+    echo -e " ${C}5.)${N} Reset (hapus semua)"
+    echo -e " ${C}x.)${N} Back"
+    echo -e "$LINE\n"
+    read -rp "$(echo -e "${G}Pilih [1-5 atau x] : ${N}")" o
+    case "$o" in
+      1) read -rp "$(echo -e "${G}Address (mis. x1.amier.cassanova.biz.id) : ${N}")" a
+         a=$(echo "$a" | tr -d '[:space:]')
+         [[ -z "$a" ]] && { msg "${R}Dibatalkan${N}"; continue; }
+         [[ "$a" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || { msg "${R}Format address tidak valid${N}"; continue; }
+         echo "$a" > "$AF"; msg "${G}Address diset: $a${N}" ;;
+      2) echo -e " Contoh suffix: ${Y} «1»🔵${N}  -> hasil remark: ${Y}adminvless «1»🔵${N}"
+         read -rp "$(echo -e "${G}Ketik remark suffix (boleh spasi/emoji) : ${N}")" r
+         [[ -z "$r" ]] && { msg "${R}Dibatalkan${N}"; continue; }
+         printf '%s' "$r" > "$RF"; msg "${G}Remark suffix diset${N}" ;;
+      3) echo on  > "$OF"; msg "${G}Custom Output: ON${N}" ;;
+      4) echo off > "$OF"; msg "${Y}Custom Output: OFF${N}" ;;
+      5) rm -f "$AF" "$RF" "$OF"; msg "${G}Custom output direset${N}" ;;
+      x|X) return ;;
+      *) msg "${R}Pilihan salah${N}" ;;
+    esac
+  done
+}
+
 # mode non-interaktif: adddomain
 if [[ "$1" == "--domain" ]]; then change_domain; exit 0; fi
 if [[ "$1" == "--port" ]]; then cek_port; exit 0; fi
@@ -1119,18 +1161,19 @@ while true; do
   bar "SYSTEM"
   echo -e " ${C}9.)${N}  Start/Stop Service"
   echo -e " ${C}10.)${N} ON/OFF Protokol"
-  echo -e " ${C}11.)${N} Security SYN & Optimasi"
-  echo -e " ${C}12.)${N} Change Domain VPS"
-  echo -e " ${C}13.)${N} Information System"
-  echo -e " ${C}14.)${N} Cek Port VPS"
-  echo -e " ${C}15.)${N} Auto Update"
+  echo -e " ${C}11.)${N} Custom Output BT"
+  echo -e " ${C}12.)${N} Security SYN & Optimasi"
+  echo -e " ${C}13.)${N} Change Domain VPS"
+  echo -e " ${C}14.)${N} Information System"
+  echo -e " ${C}15.)${N} Cek Port VPS"
+  echo -e " ${C}16.)${N} Auto Update"
   bar "MONITORING"
-  echo -e " ${C}16.)${N} Cek VPS (Monitoring)"
-  echo -e " ${C}17.)${N} Back to Menu"
+  echo -e " ${C}17.)${N} Cek VPS (Monitoring)"
+  echo -e " ${C}18.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-17 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-18 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "check_bandwidth" ;;
@@ -1145,13 +1188,14 @@ while true; do
     8) cas_run "restore_vps" ;;
     9) cas_run "start_stop" ;;
     10) cas_run "onoff_proto" ;;
-    11) cas_run "security_syn" ;;
-    12) cas_run "change_domain" ;;
-    13) cas_run "info_system" ;;
-    14) cas_run "cek_port" ;;
-    15) cas-update; exit 0 ;;
-    16) cas_run "monitoring" ;;
-    17) exit 0 ;;
+    11) cas_run "custom_out" ;;
+    12) cas_run "security_syn" ;;
+    13) cas_run "change_domain" ;;
+    14) cas_run "info_system" ;;
+    15) cas_run "cek_port" ;;
+    16) cas-update; exit 0 ;;
+    17) cas_run "monitoring" ;;
+    18) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
@@ -1400,6 +1444,88 @@ def build_sub(token):
         return None
     return "\n".join(uris) + "\n"
 
+# ---- Halaman rincian akun (/akun/<uuid>) : tampilan bergaya output bot ----
+AKUN_CSS = """
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#0e1621;color:#e7eef5;padding:16px;line-height:1.5}
+.wrap{max-width:560px;margin:0 auto}
+h1{font-size:17px;text-align:center;color:#b794ff;letter-spacing:.5px;margin:6px 0 2px}
+.sub{text-align:center;font-size:12px;color:#8b98b0;margin-bottom:16px}
+.sec{text-align:center;font-weight:700;color:#cfe3ff;margin:18px 0 6px;font-size:14px;letter-spacing:.5px}
+.box{background:#17212b;border:1px solid #243049;border-radius:8px;padding:10px 12px;margin:6px 0;
+font-family:"DejaVu Sans Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre-wrap;word-break:break-all;color:#dbe7f3}
+.cp{cursor:pointer;position:relative}
+.cp:active{background:#1e2c3a}
+.cp.ok{outline:2px solid #4ade80}
+.lbl{text-align:center;color:#9db4d0;font-size:12px;margin:10px 0 2px;font-weight:600}
+.hint{text-align:center;color:#8b98b0;font-size:11.5px;margin:14px 0 4px;font-style:italic}
+"""
+AKUN_JS = """
+document.querySelectorAll('.cp').forEach(function(e){
+  e.addEventListener('click',function(){
+    var t=e.dataset.c||e.textContent;
+    navigator.clipboard&&navigator.clipboard.writeText(t);
+    e.classList.add('ok');setTimeout(function(){e.classList.remove('ok')},900);
+  });
+});
+"""
+
+def build_akun_html(token):
+    user = _username_for(token)
+    if not user or not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", user):
+        return None
+    domain = rd(f"{ASD}/domain", "")
+    brand = (rd(f"{ASD}/brand", "CASSANOVA") or "CASSANOVA").upper()
+    secs = []
+    for p in PROTOS:
+        try:
+            out = subprocess.run(["/usr/local/sbin/m-xray", p, "--show", user],
+                                 capture_output=True, text=True, timeout=10).stdout
+        except Exception:
+            out = ""
+        ok = None; links = []
+        for line in out.splitlines():
+            c = line.split("|")
+            if c[0] == "OK" and len(c) >= 6:
+                ok = c
+            elif c[0] == "LINK" and len(c) >= 3:
+                links.append((c[1], c[2]))
+        if not ok:
+            continue
+        _, ou, oid, oexp, oipl, oq = ok[:6]
+        info = [("Username", ou), ("Password" if p == "trojan" else "id", oid),
+                ("Domain", domain),
+                ("Limit IP", "Unlimited" if oipl in ("0", "") else oipl),
+                ("Kuota", "Unlimited" if oq in ("0", "") else f"{oq} GB"),
+                ("Expired On", oexp)]
+        secs.append((p.upper(), info, links))
+    try:
+        hy = subprocess.run(["/usr/local/sbin/m-hy2", "--link", user],
+                            capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception:
+        hy = ""
+    hy = hy if hy.startswith("hysteria2://") else ""
+    if not secs and not hy:
+        return None
+    E = html.escape
+    out = ['<!DOCTYPE html><html lang="id"><head><meta charset="utf-8">',
+           '<meta name="viewport" content="width=device-width,initial-scale=1">',
+           f'<title>Akun {E(user)} - {E(brand)}</title><style>{AKUN_CSS}</style></head><body><div class="wrap">',
+           f'<h1>{E(brand)}</h1><div class="sub">Rincian Akun &middot; {E(user)}</div>']
+    for title, info, links in secs:
+        out.append(f'<div class="sec">&#9472;&#9472; {E(title)} &#9472;&#9472;</div>')
+        infotxt = "\n".join(f"{k:<13}: {E(str(v))}" for k, v in info)
+        out.append(f'<div class="box cp">{infotxt}</div>')
+        for lbl, val in links:
+            out.append(f'<div class="lbl">{E(lbl)}</div><div class="box cp">{E(val)}</div>')
+    if hy:
+        out.append('<div class="sec">&#9472;&#9472; HYSTERIA2 &#9472;&#9472;</div>')
+        out.append(f'<div class="lbl">LINK HYSTERIA2</div><div class="box cp">{E(hy)}</div>')
+    out.append(f'<div class="sec">&#128279; SUBSCRIPTION</div><div class="box cp">https://{E(domain)}/sub/{E(token)}</div>')
+    out.append('<div class="hint">Ketuk tiap kotak untuk menyalin.</div>')
+    out.append(f'<script>{AKUN_JS}</script></div></body></html>')
+    return "".join(out)
+
 PAGE = """<!DOCTYPE html><html lang="id"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cek Akun - __BRAND__</title>
@@ -1508,6 +1634,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send(404, "not found", "text/plain; charset=utf-8")
             return self._send(200, base64.b64encode(data.encode()).decode(),
                               "text/plain; charset=utf-8")
+        # Halaman rincian akun bergaya bot: /akun/<uuid>
+        ma = re.search(r"/akun/([A-Za-z0-9._@:+-]{6,80})$", path)
+        if ma:
+            ip = self.headers.get("X-Real-IP") or self.client_address[0]
+            if not rate_ok(ip):
+                return self._send(429, "rate limit, tunggu 1 menit", "text/plain; charset=utf-8")
+            page = build_akun_html(ma.group(1))
+            if not page:
+                return self._send(404, "Akun tidak ditemukan", "text/html; charset=utf-8")
+            return self._send(200, page, "text/html; charset=utf-8")
         if path.endswith("/api"):
             ip = self.headers.get("X-Real-IP") or self.client_address[0]
             if not rate_ok(ip):

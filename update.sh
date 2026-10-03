@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.9"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.10"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -356,6 +356,14 @@ st_label(){
 
 mk_link(){ # net(ws|up|grpc|xh) tls(1|0)  -> pakai variabel ID & REM
   local port sec path t qs j tlsv
+  # Custom Output BT (Features): saat ON, address di link diganti custom TAPI
+  # host & sni tetap domain asli (teknik bug/CDN host); remark = remark asli +
+  # suffix. Berlaku di semua output (terminal, bot, subscription).
+  local ADDR="$DOMAIN" REMO="$REM"
+  if [[ "$(cat $ASD/custom_out 2>/dev/null)" == on ]]; then
+    local _ca; _ca=$(cat $ASD/custom_addr 2>/dev/null | tr -d '[:space:]'); [[ -n "$_ca" ]] && ADDR="$_ca"
+    local _cr; _cr=$(cat $ASD/custom_remark 2>/dev/null); [[ -n "$_cr" ]] && REMO="$REM$_cr"
+  fi
   # XHTTP: tiap protokol punya port & penanda siap sendiri
   local _xpf=$ASD/xhttp_port
   [[ $PROTO == trojan ]] && _xpf=$ASD/xhttp_port_trojan
@@ -371,9 +379,10 @@ mk_link(){ # net(ws|up|grpc|xh) tls(1|0)  -> pakai variabel ID & REM
           sec=tls ;;
   esac
   if [[ $PROTO == vmess ]]; then
-    j=$(jq -nc --arg ps "$REM" --arg a "$DOMAIN" --arg id "$ID" --arg port "$port" --arg net "$t" --arg p "$path" \
+    # add = ADDR (boleh custom); host & sni = domain asli ($d)
+    j=$(jq -nc --arg ps "$REMO" --arg a "$ADDR" --arg d "$DOMAIN" --arg id "$ID" --arg port "$port" --arg net "$t" --arg p "$path" \
          --arg tls "$tlsv" --arg ty "$([[ $1 == grpc ]] && echo gun || echo none)" \
-         '{v:"2",ps:$ps,add:$a,port:$port,id:$id,aid:"0",scy:"auto",net:$net,type:$ty,host:$a,path:$p,tls:$tls,sni:(if $tls=="tls" then $a else "" end)}')
+         '{v:"2",ps:$ps,add:$a,port:$port,id:$id,aid:"0",scy:"auto",net:$net,type:$ty,host:$d,path:$p,tls:$tls,sni:(if $tls=="tls" then $d else "" end)}')
     echo "vmess://$(echo -n "$j" | base64 -w0)"; return
   fi
   if [[ $1 == grpc ]]; then
@@ -384,7 +393,10 @@ mk_link(){ # net(ws|up|grpc|xh) tls(1|0)  -> pakai variabel ID & REM
   # XHTTP selalu TLS: sni & fingerprint ikut ditulis walau argumen kedua 0
   if [[ $1 == xh ]]; then qs+="&fp=chrome&sni=$DOMAIN"
   elif [[ $2 == 1 ]]; then qs+="&sni=$DOMAIN"; fi
-  echo "$PROTO://$ID@$DOMAIN:$port?$qs#$REM"
+  # remark: kalau custom suffix aktif, URL-encode seluruh remark (aman utk spasi/emoji/«»);
+  # tanpa custom, biarkan apa adanya (perilaku lama tidak berubah).
+  local frag="$REM"; [[ "$REMO" != "$REM" ]] && frag=$(printf '%s' "$REMO" | jq -sRr @uri)
+  echo "$PROTO://$ID@$ADDR:$port?$qs#$frag"
 }
 
 show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (akun penuh)
@@ -448,6 +460,9 @@ $BR
 🔗 <b>SUBSCRIPTION</b> (semua protokol akun ini)
 <code>https://$DOMAIN/sub/$ID</code>
 $BR
+🌐 <b>HALAMAN AKUN</b> (rincian lengkap, bisa dibagikan)
+<code>https://$DOMAIN/akun/$ID</code>
+$BR
 🔁 <b>CONVERT LINK</b>
 Sing-box   : <code>https://singbox.cassanova.my.id/</code>
 Multi Akun : <code>https://multi.cassanova.my.id/</code>
@@ -462,10 +477,11 @@ $BR
     local icon="✅"
     # notifonly -> dipanggil "m-xray --notif" (cek config all-protocol). Harus
     # SINKRON supaya urutan VLESS->VMESS->TROJAN tidak tertukar.
+    # nofoot: footer domain diganti oleh link "HALAMAN AKUN" di dalam body.
     if [[ "$notif" == notifonly ]]; then
-      cas_notify_sync "<b>$icon $ntitle</b>"$'\n'"$body"
+      cas_notify_sync  "<b>$icon $ntitle</b>"$'\n'"$body" nofoot
     else
-      cas_notify_raw  "<b>$icon $ntitle</b>"$'\n'"$body"
+      cas_notify_plain "<b>$icon $ntitle</b>"$'\n'"$body"
     fi
   fi
   # notifonly = hanya kirim ke bot, JANGAN sentuh tampilan terminal.
@@ -2148,6 +2164,13 @@ server {
     }
     # Subscription per akun (/sub/<uuid> -> base64 gabungan config), service 8099
     location ^~ /sub {
+        proxy_pass http://127.0.0.1:8099;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 20s;
+    }
+    # Halaman rincian akun bergaya bot (/akun/<uuid>), service 8099
+    location ^~ /akun {
         proxy_pass http://127.0.0.1:8099;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
