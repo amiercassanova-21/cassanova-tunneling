@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.4"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.5"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -428,13 +428,15 @@ Expired On    : $exp"
     # Gaya Potato: judul+garis di LUAR kotak (pemisah), tiap data (detail & tiap
     # link) di kotak <pre> sendiri -> bisa tap-salin per-kotak.
     ctr(){ local t="$1" w=32 p; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; printf "%*s%s" $p "" "$t"; }
-    blk(){ printf '%s\n%s\n%s\n<pre>%s</pre>' "$BR" "$(ctr "$1")" "$BR" "$2"; }
+    # <code> = kotak monospace tap-salin TANPA tombol "SALIN KODE" (itu khusus <pre>).
+    # Judul ikut di dalam <code> supaya BENAR-BENAR ter-tengah relatif garis.
+    blk(){ printf '<code>%s\n%s\n%s</code>\n<code>%s</code>' "$BR" "$(ctr "$1")" "$BR" "$2"; }
     local xbl=""
     (( xhon )) && xbl=$'\n'"$(blk "$UP XHTTP TLS" "$(mk_link xh 1)")"
-    local body="$BR
+    local body="<code>$BR
 $(ctr "$UP")
-$BR
-<pre>$info</pre>
+$BR</code>
+<code>$info</code>
 $(blk "$UP WS TLS"          "$(mk_link ws 1)")
 $(blk "$UP WS NON-TLS"      "$(mk_link ws 0)")
 $(blk "$UP GRPC"            "$(mk_link grpc 1)")

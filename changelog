@@ -1,3 +1,12 @@
+v1.48.5
+OUTPUT AKUN: TANPA "SALIN KODE" + JUDUL TER-TENGAH
+- Kotak detail & tiap link pakai <code> (bukan <pre>): tetap bisa tap-salin
+  (akun & tiap link), TAPI tanpa tombol/tulisan "SALIN KODE" -> bersih seperti
+  Potato.
+- Judul tiap bagian (VLESS, VLESS WS TLS, dst) kini monospace sehingga
+  BENAR-BENAR ter-tengah relatif garis pemisah.
+- Convert link tetap <code> inline (1x klik salin).
+
 v1.48.4
 OUTPUT AKUN BOT GAYA POTATO (tiap kotak bisa tap-salin)
 - Rincian akun di bot (VLESS/VMESS/TROJAN + Recovery): header ━ VLESS ━, detail
