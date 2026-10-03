@@ -175,7 +175,7 @@ hy_expire(){
     [[ -z "$u" ]] && continue
     if [[ "$exp" < "$today" ]]; then hy_remove "$u"; is_trial "$u" || list+="• HY2 <code>$u</code> (exp $exp)"$'\n'; fi
   done < <(cat "$DB")
-  [[ -n "$list" ]] && cas_notify "⌛ Akun Kedaluwarsa" "<pre>$list</pre>Masuk daftar Recovery."
+  [[ -n "$list" ]] && cas_notify "⌛ Akun Kedaluwarsa" "<code>$list</code>Masuk daftar Recovery."
   awk -v l="$lim" 'NF && $1 !~ /trial/ && $NF>=l' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"
 }
 
@@ -299,11 +299,11 @@ renew(){
   lock_db; hset "$U" 2 "$exp"; hset "$U" 6 active; unlock_db
   msg "${G}$U diperpanjang s.d. $exp${N}"
   cas_notify_plain "<blockquote><b>Renew/Extend User</b></blockquote>
-$DOMAIN
-<pre>User       : $U
+<code>$DOMAIN</code>
+<code>User       : $U
 Added      : $d Days
 Expires on : $(cas_tgl "$exp")
-Type       : hysteria2</pre>"
+Type       : hysteria2</code>"
 }
 
 delete(){
@@ -313,11 +313,11 @@ delete(){
   local dexp; dexp=$(hf "$U" 2)
   lock_db; hy_remove "$U"; unlock_db
   msg "${G}$U dihapus${N}"
-  cas_notify_plain "<blockquote><b>Hapus User</b></blockquote>
-$DOMAIN
-<pre>User   : $U
+  cas_notify_plain "<blockquote><b>🗑️ Hapus User</b></blockquote>
+<code>$DOMAIN</code>
+<code>User   : $U
 Type   : hysteria2
-Status : Dihapus (Recovery)</pre>"
+Status : Dihapus (Recovery)</code>"
 }
 
 show_link(){

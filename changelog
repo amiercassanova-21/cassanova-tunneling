@@ -1,3 +1,22 @@
+v1.48.13
+BERSIH-BERSIH NOTIF: ICON, KUTIP, DOMAIN-LINK, SALIN KODE
+- Semua <pre> -> <code> di seluruh notif: TIDAK ada lagi tombol "SALIN KODE"
+  di notif mana pun (tetap monospace rapi & bisa tap-salin).
+- Notif online: icon 👥 pada label "Sedang Online" DIHAPUS.
+- Renew: tanpa icon; domain tetap tampil tapi dibungkus <code> sehingga TIDAK
+  jadi link hijau (tidak auto-link).
+- Delete: sama seperti renew (domain <code>, bukan link) TAPI tetap pakai icon
+  (🗑️ Hapus User).
+- Tanda kutip (blockquote) kini HANYA di label Renew, Delete, dan Sedang Online;
+  bagian lain bersih dari kutip.
+v1.48.12
+NOTIF "SEDANG ONLINE" DIBUAT PERSIS GAYA POTATO
+- Header IP/DOMAIN/ISP: dari <pre> -> <code> sehingga TIDAK ada lagi tombol
+  "SALIN KODE" (bersih seperti Potato), tetap monospace rapi.
+- Daftar akun online: dari kotak kode -> TEKS BIASA per baris
+  ("nama kuota xIP | koneksi"), persis gaya Potato (bukan kotak).
+- Berlaku semua protokol (VLESS/VMESS/TROJAN) + SSH. Label & "Total online"
+  tetap.
 v1.48.11
 RAPIKAN BAGIAN BAWAH OUTPUT BOT + HAPUS CEK MASA AKTIF
 - Bagian "CEK MASA AKTIF" DIHAPUS dari output bot (tidak diperlukan lagi).

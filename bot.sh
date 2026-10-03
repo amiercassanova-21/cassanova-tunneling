@@ -119,12 +119,12 @@ DOMAIN=$(cat $ASD/domain)
 IP=$(jq -r '.ip // "-"'  $ASD/ipinfo.json 2>/dev/null)
 ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
 FOOT="<i>$(date '+%H:%M')</i>"
-# Header kotak IP/DOMAIN/ISP (gaya Potato) dipakai di tiap bagian.
-HEAD="<pre>IP     : $IP
+# Header IP/DOMAIN/ISP gaya Potato: <code> (monospace, TANPA tombol "SALIN KODE").
+HEAD="<code>IP     : $IP
 DOMAIN : $DOMAIN
-ISP    : $ISP</pre>"
-# Baris online rapi berkolom: nama(12) · kuota(6) · IP · angka. Nama panjang dipotong.
-fmtrow(){ local nm="$1"; (( ${#nm} > 12 )) && nm="${nm:0:10}.."; printf '%-12s %6s  %sIP | %s' "$nm" "$2" "$3" "$4"; }
+ISP    : $ISP</code>"
+# Baris online = TEKS BIASA (gaya Potato): "nama kuota xIP | koneksi", tanpa kotak.
+fmtrow(){ local nm="$1"; (( ${#nm} > 18 )) && nm="${nm:0:16}.."; printf '%s %s %sIP | %s' "$nm" "$2" "$3" "$4"; }
 
 send(){
   local r
@@ -138,15 +138,15 @@ send(){
 # kirim per potongan (batas pesan Telegram ~4096 karakter)
 send_section(){ # protokol, isi(multiline berkolom), total
   local title=$1 body=$2 total=$3 chunk="" line part=1
-  local LBL="<blockquote><b>👥 Sedang Online $title</b></blockquote>"
+  local LBL="<blockquote><b>Sedang Online $title</b></blockquote>"
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     if (( ${#chunk} + ${#line} > 3000 )); then
-      send "$HEAD"$'\n'"$LBL"$'\n'"<pre>$chunk</pre>"; chunk=""; part=$((part+1))
+      send "$HEAD"$'\n'"$LBL"$'\n'"$chunk"; chunk=""; part=$((part+1))
     fi
     chunk+="$line"$'\n'
   done <<< "$body"
-  send "$HEAD"$'\n'"$LBL"$'\n'"<pre>$chunk</pre>Total online: <b>$total</b> akun"
+  send "$HEAD"$'\n'"$LBL"$'\n'"${chunk}Total online: <b>$total</b> akun"
 }
 
 LOG=/var/log/xray/access.log
@@ -175,11 +175,11 @@ if [[ -f $ASD/db/ssh.db ]]; then
   while read -r u cnt; do
     [[ -z "$u" ]] && continue
     grep -q "^$u " $ASD/db/ssh.db || continue
-    body+="$(printf '%-12s %s sesi' "${u:0:12}" "$cnt")"$'\n'; total=$((total+1))
+    body+="$(printf '%s %s sesi' "${u:0:18}" "$cnt")"$'\n'; total=$((total+1))
   done < <(ssh_sessions | sort)
   (( total > 0 )) && { send_section "SSH" "$body" "$total"; sent=1; }
 fi
-[[ $sent == 0 && "$1" == "--manual" ]] && send "<b>👥 Sedang Online</b>"$'\n'"Tidak ada akun yang online dalam $MIN menit terakhir."
+[[ $sent == 0 && "$1" == "--manual" ]] && send "<b>Sedang Online</b>"$'\n'"Tidak ada akun yang online dalam $MIN menit terakhir."
 exit 0
 EOF
 chmod +x /usr/local/sbin/cas-report
@@ -664,7 +664,7 @@ if [[ -n "$probs" ]]; then
   if [[ "$laststate" != alert ]] || (( now - lastts >= COOLDOWN )); then
     send "⚠️ <b>PERINGATAN VPS</b>
 <b>$DOMAIN</b>
-<pre>$probs</pre>Cek detail: ketik <code>cekvps</code> di VPS."
+<code>$probs</code>Cek detail: ketik <code>cekvps</code> di VPS."
     echo "alert $now" > "$STATE"
   fi
 else

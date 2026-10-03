@@ -288,7 +288,7 @@ ssh_expire(){
   while read -r u exp _; do
     if [[ -n "$u" && "$exp" < "$today" ]]; then ssh_remove "$u"; is_trial "$u" || list+="• SSH <code>$u</code> (exp $exp)"$'\n'; fi
   done < <(cat "$DB")
-  [[ -n "$list" ]] && cas_notify "⌛ Akun Kedaluwarsa" "<pre>$list</pre>Masuk daftar Recovery."
+  [[ -n "$list" ]] && cas_notify "⌛ Akun Kedaluwarsa" "<code>$list</code>Masuk daftar Recovery."
   awk -v l="$lim" 'NF && $1 !~ /trial/ && $NF>=l' "$TRASH" > "$TRASH.t" && mv "$TRASH.t" "$TRASH"
 }
 
@@ -424,11 +424,11 @@ trial(){
 }
 
 delete(){ pick_user || return; confirm_pick || return; local dexp=$(sf "$U" 2); lock_db; ssh_remove "$U"; unlock_db
-  cas_notify_plain "<blockquote><b>Hapus User</b></blockquote>
-$DOMAIN
-<pre>User   : $U
+  cas_notify_plain "<blockquote><b>🗑️ Hapus User</b></blockquote>
+<code>$DOMAIN</code>
+<code>User   : $U
 Type   : ssh
-Status : Dihapus (Recovery)</pre>"
+Status : Dihapus (Recovery)</code>"
   done_box "DELETE Successfully" "USER" "$U" "STATUS" "DELETED (masuk Recovery)"; pause; }
 
 renew(){
@@ -443,11 +443,11 @@ renew(){
   rm -f $ASD/usage/ssh/$U   # reset kuota agar terbaca dari nol
   unlock_db
   cas_notify_plain "<blockquote><b>Renew/Extend User</b></blockquote>
-$DOMAIN
-<pre>User       : $U
+<code>$DOMAIN</code>
+<code>User       : $U
 Added      : $d Days
 Expires on : $(cas_tgl "$new")
-Type       : ssh</pre>"
+Type       : ssh</code>"
   done_box "RENEW Successfully" "USER" "$U" "ADDED" "$d Days" "EXPIRED" "$new"; pause
 }
 
@@ -476,17 +476,17 @@ check_login(){
 }
 
 lock_user(){ pick_user active || return; confirm_pick || return; lock_db; usermod -L "$U" 2>/dev/null; pkill -u "$U" 2>/dev/null; sset "$U" 4 locked; unlock_db
-  cas_notify_quote "🔒 Akun Dikunci" "<pre>Nama   : $U
+  cas_notify_quote "🔒 Akun Dikunci" "<code>Nama   : $U
 Jenis  : SSH
-Alasan : dikunci manual oleh admin</pre>"
+Alasan : dikunci manual oleh admin</code>"
   done_box "LOCK Successfully" "USER" "$U" "STATUS" "LOCK"; pause; }
 unlock_user(){
   pick_user inactive || return
   confirm_pick || return
   [[ "$(sf "$U" 2)" < "$(date +%F)" ]] && { msg "${R}Akun expired, gunakan Renew${N}"; return; }
   lock_db; usermod -U "$U" 2>/dev/null; sset "$U" 4 active; unlock_db
-  cas_notify_quote "✅ Akun Dibuka" "<pre>Nama  : $U
-Jenis : SSH</pre>"
+  cas_notify_quote "✅ Akun Dibuka" "<code>Nama  : $U
+Jenis : SSH</code>"
   done_box "UNLOCKED Successfully" "USER" "$U" "STATUS" "UNLOCKED"; pause
 }
 
@@ -624,10 +624,10 @@ while read -r u exp ipl st; do
   [[ "$st" != active || ! "$ipl" =~ ^[0-9]+$ || "$ipl" -eq 0 ]] && continue
   n=${SESN["$u"]:-0}
   if (( n > ipl )); then usermod -L "$u" 2>/dev/null; pkill -u "$u" 2>/dev/null; sset "$u" 4 "banned:$(( now + BANMIN*60 ))"
-    cas_notify_quote "🔒 Akun Dikunci Otomatis" "<pre>Nama   : $u
+    cas_notify_quote "🔒 Akun Dikunci Otomatis" "<code>Nama   : $u
 Jenis  : SSH
 Alasan : $n sesi aktif, batas $ipl
-Dibuka : $(date -d "+$BANMIN min" '+%H:%M')</pre>"; fi
+Dibuka : $(date -d "+$BANMIN min" '+%H:%M')</code>"; fi
 done < <(cat "$DB")
 EOF
 chmod +x /usr/local/lib/autoscript/ssh-guard.sh
