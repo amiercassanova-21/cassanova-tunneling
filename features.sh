@@ -426,7 +426,7 @@ cat > /usr/local/sbin/cmd <<'EOF'
 G='\033[0;32m'; C='\033[0;36m'; Y='\033[1;33m'; P='\033[0;35m'; B='\033[0;34m'; N='\033[0m'
 L="${B}════════════════════════════════════${N}"
 clear
-echo -e "$L"; printf "${P}%*s${N}\n" 28 "DAFTAR PERINTAH CEPAT"; echo -e "$L"
+header "DAFTAR PERINTAH CEPAT"
 r(){ printf " ${C}%-22s${N} %s\n" "$1" "$2"; }
 echo -e "\n ${Y}UMUM${N}"
 r "menu"              "buka menu utama"
@@ -1131,7 +1131,7 @@ LINE="${B}═══════════════════════�
 onoff(){ [[ "$(cat $ASD/$1 2>/dev/null)" == on ]] && echo -e "${G}ON${N}" || echo -e "${R}OFF${N}"; }
 while true; do
   clear
-  echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"; echo -e "$LINE\n"
+  header "$SCNAME"; echo
   echo -e "      ${G}With Brand Name${N} : $(onoff brand_uuid)"
   echo -e "      ${G}With User${N}       : $(onoff brand_user)"
   echo -e "      ${G}Brand Name${N}      : ${O}$(brand_txt)${N}\n"

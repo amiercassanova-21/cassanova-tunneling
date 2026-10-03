@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.1"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -53,6 +53,11 @@ type cas_notify_quote &>/dev/null || cas_notify_quote(){ :; }
 R='\e[31m'; G='\e[32m'; Y='\e[33m'; B='\e[34m'; C='\e[36m'; P='\e[35m'; W='\e[1;97m'; O='\e[38;5;208m'; N='\e[0m'
 BGB='\e[44m'; BG='\e[41m'
 UBG='\e[48;5;93m'; UFR='\e[38;5;141m'   # ungu: latar banner & bingkai (identitas Cassanova)
+# Judul & sub-judul UNGU seragam untuk SEMUA menu/submenu. Script yang
+# mendefinisikan header()/bar() sendiri memakai versi identik; yang tidak,
+# mewarisi dari sini. Dengan begitu tidak ada lagi judul gaya lama yang lolos.
+header(){ clear; local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); echo -e "${UFR}╔$(printf '═%.0s' $(seq $w))╗${N}"; printf "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $p "" "$t" $r ""; echo -e "${UFR}╚$(printf '═%.0s' $(seq $w))╝${N}"; }
+bar(){ local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); printf "${UBG}${W}%*s%s%*s${N}\n" $p "" "$t" $r ""; }
 CFG=/usr/local/etc/xray/config.json
 ASD=/etc/autoscript
 API=127.0.0.1:10085
@@ -445,7 +450,7 @@ $BR
     cas_notify_raw "<b>$icon $ntitle</b>"$'\n'"$body"
   fi
   clear
-  echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#UP}+8)/2 )) "$UP ACCOUNT"; echo -e "$LINE"
+  header "$UP ACCOUNT"
   row "Remarks" "${Y}$REM${N}"
   row "CITY" "$CITY"
   row "ISP" "$ISP"
@@ -1104,10 +1109,7 @@ coming(){ echo -e "\n${Y}Fitur ini dibuat di tahap berikutnya.${N}"; sleep 2; }
 set_bantime(){
   local o m
   while true; do
-    clear
-    echo -e "${B}════════════════════════════════════${N}"
-    printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"
-    echo -e "${B}════════════════════════════════════${N}\n"
+    header "$SCNAME"; echo
     local cf; cf=$(cat $ASD/ipconfirm 2>/dev/null); [[ "$cf" =~ ^[1-9]$ ]] || cf=2
     echo -e "${G}Time Banned Active : ${O}$(cat $ASD/bantime 2>/dev/null || echo 15)m:0s${N}"
     echo -e "${G}Sensitivitas Lock  : ${O}${cf}x$([[ $cf == 1 ]] && echo " (ketat)" || echo " (toleran IP seluler)")${N}"
@@ -1217,10 +1219,7 @@ port(){ ss -tln 2>/dev/null | grep -q ":$1 " && echo -e "${G}[ON]${N}" || echo -
 ada(){ systemctl cat "$1" >/dev/null 2>&1; }
 ROWS=()
 add(){ ada "$2" && ROWS+=("$1" "$(st "$2")"); }
-clear
-echo -e "${B}════════════════════════════════════${N}"
-printf "${P}%*s${N}\n" $(( (36+${#SCNAME})/2 )) "$SCNAME"
-echo -e "${B}════════════════════════════════════${N}\n"
+header "$SCNAME"; echo
 add "SSH"      ssh
 add "DROPBEAR" cas-dropbear
 add "OPENVPN"  openvpn

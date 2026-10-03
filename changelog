@@ -1,3 +1,18 @@
+v1.48.1
+PERBAIKAN: SEMUA JUDUL MENU/SUBMENU DIPASTIKAN BANNER UNGU
+- header()/bar() UNGU kini didefinisikan global di lib.sh, jadi SEMUA script
+  (menu utama, set_bantime, running/Check Service, m-brand, cas-update, dll)
+  ikut ungu — bukan hanya yang punya definisi sendiri.
+- Judul inline gaya lama (pink + garis biru) diubah ke header() ungu:
+  * Rincian akun di terminal ("VLESS/VMESS/TROJAN ACCOUNT")
+  * Layar SET REDUCE/TIME (set_bantime)
+  * Check Service (running)
+  * Menu Brand Name
+  * Daftar Perintah Cepat (updatesc)
+- CATATAN DEPLOY: modul ssh.sh/features.sh/bot.sh/hy2.sh HARUS ikut ter-upload
+  ke repo agar perubahan tampil (SSH/FEATURES/BOT/HYSTERIA2 + perintah
+  cekonline/topuser berasal dari modul tsb).
+
 v1.48.0
 TAMPILAN UNGU + PANEL SISTEM + RESTYLE NOTIF BOT
 - Judul SEMUA menu (utama + submenu) jadi banner UNGU double-line seragam
