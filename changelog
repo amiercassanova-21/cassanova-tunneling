@@ -1,3 +1,13 @@
+v1.48.7
+OUTPUT AKUN SSH & HY2 JUGA GAYA POTATO (seragam dgn xray)
+- Notif bot SSH: kotak judul "SSH" di tengah -> info box -> kotak <code>
+  tap-salin sendiri untuk "FORMAT HTTP CUSTOM" (domain:22@user:pass) dan
+  "PAYLOAD WS". Tanpa tombol "SALIN KODE". Berlaku create & recovery.
+- Notif bot HY2: kotak judul "HYSTERIA2" di tengah -> info box -> kotak
+  <code> tap-salin untuk LINK HYSTERIA2 + bagian CONVERT LINK (1x klik).
+  Berlaku create & recovery.
+- Tampilan TERMINAL SSH & HY2 TIDAK diubah (hanya format pesan ke bot).
+
 v1.48.6
 CEK CONFIG ALL-PROTOCOL KINI MASUK BOT (DETAIL PENUH PER-PROTOKOL)
 - "Cek Config Akun (Semua Protokol)" sekarang mengirim detail LENGKAP tiap

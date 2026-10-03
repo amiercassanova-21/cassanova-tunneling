@@ -208,23 +208,32 @@ show_account(){ # user pass exp ipl quota [notif] [judul]
   echo -e " ${Y}Catatan: HY2 jalur UDP langsung ke VPS (bypass), bukan lewat IP Cloudflare.${N}"
   echo -e "$LINE"
   if [[ "$notif" == notif ]]; then
+    # Gaya Potato (seragam dengan xray): kotak judul di tengah -> info box ->
+    # link di kotak <code> SENDIRI (tap-salin), TANPA tombol "SALIN KODE".
     local BR="────────────────────────────────"
+    ctr(){ local t="$1" w=32 p; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; printf "%*s%s" $p "" "$t"; }
+    blk(){ printf '<code>%s\n%s\n%s</code>\n<code>%s</code>' "$BR" "$(ctr "$1")" "$BR" "$2"; }
+    local info="Username      : $u
+Password      : $p
+Domain        : $DOMAIN
+IP            : $IP
+Port (UDP)    : $HYPORT
+SNI           : $DOMAIN
+Limit IP      : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")
+Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
+Expired On    : $exp"
     local body="<code>$BR
-        HYSTERIA2 ACCOUNT
-$BR
- Username      : $u
- Password      : $p
- Domain        : $DOMAIN
- IP            : $IP
- Port (UDP)    : $HYPORT
- SNI           : $DOMAIN
- Limit IP      : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl IP")
- Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
- Expired On    : $exp
+$(ctr "HYSTERIA2")
 $BR</code>
-<b>Link:</b> <code>$link</code>
-<b>Convert Sing-box:</b> <code>https://singbox.cassanova.my.id/</code>
-<b>Convert Multi:</b> <code>https://multi.cassanova.my.id/</code>"
+<code>$info</code>
+$(blk "LINK HYSTERIA2" "$link")
+
+$BR
+🔁 <b>CONVERT LINK</b>
+Sing-box   : <code>https://singbox.cassanova.my.id/</code>
+Multi Akun : <code>https://multi.cassanova.my.id/</code>
+$BR
+<i>Ketuk tiap kotak untuk menyalin satu per satu.</i>"
     cas_notify_raw "<b>✅ $ntitle</b>"$'\n'"$body"
   fi
 }

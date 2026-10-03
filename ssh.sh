@@ -298,27 +298,32 @@ show_account(){ # user pass exp ipl [notif|quote] [judul]
   echo -e " ${G}Format OVPN/HTTP Custom:${N} $DOMAIN:22@$u:$p"
   echo -e "$LINE"
   if [[ "$notif" == notif || "$notif" == quote ]]; then
-    local EQ="════════════════════════════════"
+    # Gaya Potato (seragam dengan xray): kotak judul di tengah -> info box ->
+    # tiap string sambungan di kotak <code> SENDIRI (tap = salin kotak itu saja),
+    # TANPA tombol "SALIN KODE" (itu khusus <pre>).
     local BR="────────────────────────────────"
-    local body="<code>$EQ
-           SSH ACCOUNT
-$EQ
- Username      : $u
- Password      : $p
- Domain        : $DOMAIN
- IP            : $IP
- Port OpenSSH  : 22
- Port Dropbear : 143, 109
- Port SSH WS   : 80, 443 (/ssh-ws)
- Port SSL/TLS  : 443
- BadVPN UDP    : 7100-7900
- Limit IP      : $([[ "$ipl" == 0 ]] && echo Unlimited || echo "$ipl IP")
- Expired On    : $exp
+    ctr(){ local t="$1" w=32 p; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; printf "%*s%s" $p "" "$t"; }
+    blk(){ printf '<code>%s\n%s\n%s</code>\n<code>%s</code>' "$BR" "$(ctr "$1")" "$BR" "$2"; }
+    local info="Username      : $u
+Password      : $p
+Domain        : $DOMAIN
+IP            : $IP
+Port OpenSSH  : 22
+Port Dropbear : 143, 109
+Port SSH WS   : 80, 443 (/ssh-ws)
+Port SSL/TLS  : 443
+BadVPN UDP    : 7100-7900
+Limit IP      : $([[ "$ipl" == 0 ]] && echo Unlimited || echo "$ipl IP")
+Expired On    : $exp"
+    local payload="GET / HTTP/1.1[crlf]Host: $DOMAIN[crlf]Upgrade: websocket[crlf][crlf]"
+    local body="<code>$BR
+$(ctr "SSH")
+$BR</code>
+<code>$info</code>
+$(blk "FORMAT HTTP CUSTOM" "$DOMAIN:22@$u:$p")
+$(blk "PAYLOAD WS" "$payload")
 $BR
-        Format HTTP Custom
-$BR
-$DOMAIN:22@$u:$p
-$BR</code>"
+<i>Ketuk tiap kotak untuk menyalin satu per satu.</i>"
     # ✅ dipakai untuk akun baru maupun akun yang dipulihkan: dua-duanya berhasil
     local icon="✅"
     cas_notify_raw "<b>$icon $ntitle</b>"$'\n'"$body"
