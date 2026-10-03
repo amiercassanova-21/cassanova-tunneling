@@ -1,3 +1,26 @@
+v1.48.15
+OPTIMASI CPU/JARINGAN LEBIH LENGKAP (gabung dari optimasicpu Potato)
+- cas-rps (default, jalan tiap boot) kini TAMBAH:
+  * nf_conntrack_max=262144 + hashsize=65536 (PALING berdampak untuk VPS ribuan
+    koneksi; cegah tabel conntrack mentok -> drop -> CPU naik). Dilewati otomatis
+    kalau modul conntrack tidak aktif.
+  * net.core.netdev_budget_usecs=8000
+  * net.core.somaxconn=8192
+  * net.ipv4.tcp_max_syn_backlog=16384
+  * CPU governor -> performance (otomatis dilewati di VPS virtual tanpa cpufreq).
+- Menu Features "Security SYN & Optimasi" diselaraskan: somaxconn 8192 &
+  tcp_max_syn_backlog 16384 (biar tidak menurunkan default cas-rps).
+- Catatan: optimasilog TIDAK diperlukan -> SC sudah loglevel=warning + logrotate
+  bawaan, dan limit-IP baca log pakai tail (bukan scan seluruh log seperti Potato).
+v1.48.14
+FIX CPU HOME SERING 100% PADAHAL IDLE (artefak pengukuran)
+- cas-syscache dulu mengukur CPU dari sampel 1 DETIK tiap 30 detik -> kalau detik
+  itu kebetulan kena aktivitas sekejap (guard per-menit, fail2ban, buka menu),
+  kebaca 100% padahal rata-rata idle (load rendah). Angka CPU & load jadi
+  bertabrakan.
+- Sekarang CPU = RATA-RATA /proc/stat antar siklus (~30 detik), bukan sampel
+  sesaat -> mencerminkan beban nyata: idle tampil kecil, sibuk tampil tinggi.
+  Siklus pertama tetap bootstrap sampel 1 detik supaya ada angka awal.
 v1.48.13
 BERSIH-BERSIH NOTIF: ICON, KUTIP, DOMAIN-LINK, SALIN KODE
 - Semua <pre> -> <code> di seluruh notif: TIDAK ada lagi tombol "SALIN KODE"

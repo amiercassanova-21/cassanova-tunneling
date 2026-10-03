@@ -885,9 +885,9 @@ apply_sysctl(){
   header "SECURITY SYN / OPTIMASI"
   cat > /etc/sysctl.d/99-cassanova.conf <<SYS
 net.ipv4.tcp_syncookies=1
-net.ipv4.tcp_max_syn_backlog=8192
+net.ipv4.tcp_max_syn_backlog=16384
 net.ipv4.tcp_synack_retries=2
-net.core.somaxconn=4096
+net.core.somaxconn=8192
 net.ipv4.tcp_fin_timeout=15
 net.ipv4.tcp_tw_reuse=1
 net.core.default_qdisc=fq

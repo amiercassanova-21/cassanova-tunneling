@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.13"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.15"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -2408,6 +2408,20 @@ done
 sysctl -qw net.core.rps_sock_flow_entries=32768 2>/dev/null
 sysctl -qw net.core.netdev_max_backlog=100000   2>/dev/null
 sysctl -qw net.core.netdev_budget=600           2>/dev/null
+sysctl -qw net.core.netdev_budget_usecs=8000    2>/dev/null
+sysctl -qw net.core.somaxconn=8192              2>/dev/null
+sysctl -qw net.ipv4.tcp_max_syn_backlog=16384   2>/dev/null
+# conntrack: PENTING untuk VPS ribuan koneksi. Kalau tabel conntrack mentok,
+# paket di-drop -> retransmit -> CPU naik & koneksi goyang. Dilewati otomatis
+# kalau modul conntrack tidak aktif (mis. tanpa nat/iptables).
+if [[ -e /proc/sys/net/netfilter/nf_conntrack_max ]]; then
+  sysctl -qw net.netfilter.nf_conntrack_max=262144 2>/dev/null
+  [[ -w /sys/module/nf_conntrack/parameters/hashsize ]] && echo 65536 > /sys/module/nf_conntrack/parameters/hashsize 2>/dev/null
+fi
+# CPU governor -> performance. Otomatis dilewati di VPS virtual (tanpa cpufreq).
+for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+  [[ -w "$g" ]] && echo performance > "$g" 2>/dev/null
+done
 exit 0
 EOF
 chmod +x /usr/local/sbin/cas-rps
@@ -2416,14 +2430,25 @@ cat > /usr/local/sbin/cas-syscache <<'EOF'
 #!/bin/bash
 . /usr/local/lib/autoscript/lib.sh
 mkdir -p $ASD/cache
+PREV_IDLE=0; PREV_TOT=0
 calc(){
-  local u n s i w irq sirq idle1 tot1 idle2 tot2 dt di cpu core load ramu ramt ram disku diskt disk freemb est hc h cap
+  local u n s i w irq sirq idle tot idle2 tot2 dt di cpu core load ramu ramt ram disku diskt disk freemb est hc h cap
+  # CPU = RATA-RATA sejak siklus sebelumnya (~30 detik), bukan sampel 1 detik
+  # yang gampang kebetulan kena puncak sesaat (dulu bisa nongol 100% padahal idle).
   read _ u n s i w irq sirq _ < /proc/stat
-  idle1=$((i+w)); tot1=$((u+n+s+i+w+irq+sirq))
-  sleep 1
-  read _ u n s i w irq sirq _ < /proc/stat
-  idle2=$((i+w)); tot2=$((u+n+s+i+w+irq+sirq))
-  dt=$((tot2-tot1)); di=$((idle2-idle1)); cpu=0; (( dt>0 )) && cpu=$(( (100*(dt-di))/dt ))
+  idle=$((i+w)); tot=$((u+n+s+i+w+irq+sirq))
+  if (( PREV_TOT>0 )); then
+    dt=$((tot-PREV_TOT)); di=$((idle-PREV_IDLE))
+  else
+    # siklus pertama saja: bootstrap sampel 1 detik supaya ada angka awal
+    sleep 1
+    read _ u n s i w irq sirq _ < /proc/stat
+    idle2=$((i+w)); tot2=$((u+n+s+i+w+irq+sirq))
+    dt=$((tot2-tot)); di=$((idle2-idle)); idle=$idle2; tot=$tot2
+  fi
+  cpu=0; (( dt>0 )) && cpu=$(( (100*(dt-di))/dt ))
+  (( cpu<0 ))&&cpu=0; (( cpu>100 ))&&cpu=100
+  PREV_IDLE=$idle; PREV_TOT=$tot
   core=$(nproc 2>/dev/null); [[ "$core" =~ ^[0-9]+$ ]] || core=1
   load=$(cut -d' ' -f1 /proc/loadavg)
   read ramu ramt < <(free -m | awk '/Mem:/{print $3, $2}')
