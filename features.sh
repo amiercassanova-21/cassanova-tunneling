@@ -338,6 +338,81 @@ fi
 EOF
 chmod +x /usr/local/sbin/cekvps
 
+# jalan pintas: ketik  cekonline  -> semua akun online lintas protokol (read-only)
+cat > /usr/local/sbin/cekonline <<'EOF'
+#!/bin/bash
+. /usr/local/lib/autoscript/lib.sh
+LINE="${B}════════════════════════════════════${N}"
+MIN=5
+clear
+echo -e "${UFR}╔$(printf '═%.0s' $(seq 46))╗${N}"
+printf  "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" 14 "" "SEMUA AKUN ONLINE" 15 ""
+echo -e "${UFR}╚$(printf '═%.0s' $(seq 46))╝${N}"
+LOG=/var/log/xray/access.log
+since=$(date -d "-$MIN min" '+%Y/%m/%d %H:%M:%S')
+DATA=""
+[[ -f $LOG ]] && DATA=$(awk -v s="$since" 'substr($0,1,19)>=s' $LOG \
+  | sed -nE 's/.* from (tcp:|udp:)?(\[[^]]+\]|[0-9.]+):[0-9]+ accepted .*email: ([^ ]+).*/\3 \2/p')
+grand=0
+for p in vless vmess trojan; do
+  n=0
+  while read -r e conns ips; do
+    [[ -z "$e" ]] && continue
+    u=${e#*.}
+    (( n==0 )) && echo -e "\n ${P}[$p]${N}"
+    printf "  ${G}%-12s${N} %6s  %sIP | %s\n" "${u:0:12}" "$(hbytes $(usage_get $p "$u"))" "$ips" "$conns"
+    n=$((n+1)); grand=$((grand+1))
+  done < <(echo "$DATA" | awk -v p="$p." 'index($1,p)==1 { c[$1]++; k=$1" "$2; if(!(k in seen)){seen[k]=1; ip[$1]++} } END{ for(u in c) print u, c[u], ip[u] }' | sort -k2 -nr)
+done
+if [[ -f $ASD/db/ssh.db ]]; then
+  n=0
+  while read -r u cnt; do
+    [[ -z "$u" ]] && continue
+    grep -q "^$u " $ASD/db/ssh.db || continue
+    (( n==0 )) && echo -e "\n ${P}[ssh]${N}"
+    printf "  ${G}%-12s${N} %s sesi\n" "${u:0:12}" "$cnt"
+    n=$((n+1)); grand=$((grand+1))
+  done < <(ssh_sessions | sort)
+fi
+echo -e "\n$LINE"
+echo -e " ${G}Total online : ${Y}$grand${N} akun   ${B}($MIN menit terakhir)${N}"
+echo -e "$LINE"
+EOF
+chmod +x /usr/local/sbin/cekonline
+
+# jalan pintas: ketik  topuser  -> urutan akun pemakai bandwidth terbesar (read-only)
+cat > /usr/local/sbin/topuser <<'EOF'
+#!/bin/bash
+. /usr/local/lib/autoscript/lib.sh
+LINE="${B}════════════════════════════════════${N}"
+TOPN=${1:-20}
+clear
+echo -e "${UFR}╔$(printf '═%.0s' $(seq 46))╗${N}"
+printf  "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" 12 "" "TOP PEMAKAI BANDWIDTH" 13 ""
+echo -e "${UFR}╚$(printf '═%.0s' $(seq 46))╝${N}"
+tmp=$(mktemp)
+for p in vless vmess trojan; do
+  [[ -f $ASD/db/$p.db ]] || continue
+  while read -r u exp id ipl q st; do
+    [[ -z "$u" ]] && continue
+    is_all "$u" && continue
+    printf "%s\t%s\t%s\t%s\t%s\n" "$(usage_get $p "$u")" "$u" "$p" "$ipl" "$q" >> "$tmp"
+  done < "$ASD/db/$p.db"
+done
+echo
+printf " ${G}%-12s %-7s %9s %6s %6s${N}\n" "USER" "PROTO" "PAKAI" "LIMIP" "KUOTA"
+echo -e "$LINE"
+sort -t"	" -k1 -nr "$tmp" | head -n "$TOPN" | while IFS="	" read -r used u p ipl q; do
+  xip="$ipl"; [[ "$ipl" == 0 || -z "$ipl" ]] && xip="~"
+  if [[ "$q" == 0 || -z "$q" ]]; then xq="~"; else xq="${q}G"; fi
+  printf " ${Y}%-12s${N} %-7s %9s %6s %6s\n" "${u:0:12}" "$p" "$(hbytes $used)" "$xip" "$xq"
+done
+rm -f "$tmp"
+echo -e "$LINE"
+echo -e " ${B}Pemakaian = akumulasi kuota per akun (bukan total vnstat VPS).${N}"
+EOF
+chmod +x /usr/local/sbin/topuser
+
 # jalan pintas: ketik  cekport
 cat > /usr/local/sbin/cekport <<'EOF'
 #!/bin/bash
@@ -502,8 +577,8 @@ cat > /usr/local/sbin/m-feature <<'EOF'
 . /usr/local/lib/autoscript/lib.sh
 BRAND=$SCNAME; DOMAIN=$(cat $ASD/domain); VER=$(cat $ASD/version)
 LINE="${B}════════════════════════════════════${N}"
-header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
-bar(){ echo -e "$LINE"; printf "${BGB}${W}%*s%*s${N}\n" $(( (36+${#1})/2 )) "$1" $(( 36-(36+${#1})/2 )) ""; echo -e "$LINE"; }
+header(){ clear; local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); echo -e "${UFR}╔$(printf '═%.0s' $(seq $w))╗${N}"; printf "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $p "" "$t" $r ""; echo -e "${UFR}╚$(printf '═%.0s' $(seq $w))╝${N}"; }
+bar(){ local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); printf "${UBG}${W}%*s%s%*s${N}\n" $p "" "$t" $r ""; }
 pause(){ echo; read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; }
 msg(){ echo -e "$1"; sleep 2; }
 num_ok(){ [[ "$1" =~ ^[0-9]+$ ]]; }
@@ -961,24 +1036,28 @@ monitoring(){
     echo -e " ${C}1.)${N} Cek VPS (ringkas)"
     echo -e " ${C}2.)${N} Cek VPS Live (realtime)"
     echo -e " ${C}3.)${N} btop (monitor lengkap)"
-    echo -e " ${C}4.)${N} Alert Kesehatan ke Telegram [$hs]"
-    echo -e " ${C}5.)${N} Kembali"
+    echo -e " ${C}4.)${N} Semua Akun Online"
+    echo -e " ${C}5.)${N} Top Pemakai Bandwidth"
+    echo -e " ${C}6.)${N} Alert Kesehatan ke Telegram [$hs]"
+    echo -e " ${C}7.)${N} Kembali"
     echo -e "$LINE\n"
     trap 'return' INT
-    read -rp "$(echo -e "${G}Select From Options [1-5] : ${N}")" m
+    read -rp "$(echo -e "${G}Select From Options [1-7] : ${N}")" m
     trap ':' INT
     case $m in
       1) /usr/local/sbin/cekvps; read -rp "$(echo -e "\n${P}Press Enter for Back to Menu${N}")" ;;
       2) ( trap 'exit 0' INT; /usr/local/sbin/cekvps live ) ;;
       3) command -v btop >/dev/null 2>&1 || apt install -y btop >/dev/null 2>&1; btop ;;
-      4) if [[ "$(cat $ASD/health_alert 2>/dev/null)" == off ]]; then
+      4) /usr/local/sbin/cekonline; read -rp "$(echo -e "\n${P}Press Enter for Back to Menu${N}")" ;;
+      5) /usr/local/sbin/topuser;  read -rp "$(echo -e "\n${P}Press Enter for Back to Menu${N}")" ;;
+      6) if [[ "$(cat $ASD/health_alert 2>/dev/null)" == off ]]; then
            echo on > $ASD/health_alert
            { echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; echo "*/15 * * * * root /usr/local/sbin/cas-health"; } > /etc/cron.d/cas-health
            chmod 644 /etc/cron.d/cas-health; msg "${G}Alert kesehatan: ON (cek tiap 15 menit)${N}"
          else
            echo off > $ASD/health_alert; rm -f /etc/cron.d/cas-health; msg "${G}Alert kesehatan: OFF${N}"
          fi ;;
-      5) return ;;
+      7) return ;;
       *) msg "${R}Pilihan salah${N}" ;;
     esac
   done

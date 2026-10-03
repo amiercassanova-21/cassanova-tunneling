@@ -88,8 +88,15 @@ BOT_TOKEN=""; CHAT_ID=""
 [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]] && { echo "Bot belum diatur"; exit 0; }
 MIN=$(cat $ASD/report_interval 2>/dev/null); [[ "$MIN" =~ ^[0-9]+$ && $MIN -gt 0 ]] || MIN=60
 DOMAIN=$(cat $ASD/domain)
-# Satu baris kaki, bukan header IP/DOMAIN/ISP tiga baris yang diulang tiap bagian.
-FOOT="<i>$DOMAIN · $(date '+%H:%M')</i>"
+IP=$(jq -r '.ip // "-"'  $ASD/ipinfo.json 2>/dev/null)
+ISP=$(jq -r '.org // "-"' $ASD/ipinfo.json 2>/dev/null | sed 's/^AS[0-9]* //')
+FOOT="<i>$(date '+%H:%M')</i>"
+# Header kotak IP/DOMAIN/ISP (gaya Potato) dipakai di tiap bagian.
+HEAD="<pre>IP     : $IP
+DOMAIN : $DOMAIN
+ISP    : $ISP</pre>"
+# Baris online rapi berkolom: nama(12) · kuota(6) · IP · angka. Nama panjang dipotong.
+fmtrow(){ local nm="$1"; (( ${#nm} > 12 )) && nm="${nm:0:10}.."; printf '%-12s %6s  %sIP | %s' "$nm" "$2" "$3" "$4"; }
 
 send(){
   local r
@@ -101,17 +108,17 @@ send(){
     "$(date '+%F %T')" "$(printf '%s' "$r" | head -c 200)" >> /var/log/cas-notify.log
 }
 # kirim per potongan (batas pesan Telegram ~4096 karakter)
-send_section(){ # judul, isi(multiline), total
+send_section(){ # protokol, isi(multiline berkolom), total
   local title=$1 body=$2 total=$3 chunk="" line part=1
+  local LBL="<blockquote><b>👥 Sedang Online $title</b></blockquote>"
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    if (( ${#chunk} + ${#line} > 3300 )); then
-      send "<b>👥 $title</b> <i>(bagian $part)</i>"$'\n'"<pre>$chunk</pre>"; chunk=""; part=$((part+1))
+    if (( ${#chunk} + ${#line} > 3000 )); then
+      send "$HEAD"$'\n'"$LBL"$'\n'"<pre>$chunk</pre>"; chunk=""; part=$((part+1))
     fi
     chunk+="$line"$'\n'
   done <<< "$body"
-  [[ $part -gt 1 ]] && title="$title (bagian $part)"
-  send "<b>👥 $title</b>"$'\n'"<pre>$chunk</pre>Total: <b>$total</b> akun"
+  send "$HEAD"$'\n'"$LBL"$'\n'"<pre>$chunk</pre>Total online: <b>$total</b> akun"
 }
 
 LOG=/var/log/xray/access.log
@@ -126,9 +133,9 @@ for p in vless vmess trojan; do
   while read -r e conns ips; do
     [[ -z "$e" ]] && continue
     u=${e#*.}
-    body+="$u $(hbytes $(usage_get $p "$u")) ${ips}IP | $conns"$'\n'; total=$((total+1))
+    body+="$(fmtrow "$u" "$(hbytes $(usage_get $p "$u"))" "$ips" "$conns")"$'\n'; total=$((total+1))
   done < <(echo "$DATA" | awk -v p="$p." 'index($1,p)==1 { c[$1]++; k=$1" "$2; if(!(k in seen)){seen[k]=1; ip[$1]++} } END{ for(u in c) print u, c[u], ip[u] }' | sort -k2 -nr)
-  (( total > 0 )) && { send_section "Sedang Online ${p^^}" "$body" "$total"; sent=1; }
+  (( total > 0 )) && { send_section "${p^^}" "$body" "$total"; sent=1; }
 done
 
 # SSH: sesi aktif per user
@@ -140,9 +147,9 @@ if [[ -f $ASD/db/ssh.db ]]; then
   while read -r u cnt; do
     [[ -z "$u" ]] && continue
     grep -q "^$u " $ASD/db/ssh.db || continue
-    body+="$u | $cnt sesi"$'\n'; total=$((total+1))
+    body+="$(printf '%-12s %s sesi' "${u:0:12}" "$cnt")"$'\n'; total=$((total+1))
   done < <(ssh_sessions | sort)
-  (( total > 0 )) && { send_section "Sedang Online SSH" "$body" "$total"; sent=1; }
+  (( total > 0 )) && { send_section "SSH" "$body" "$total"; sent=1; }
 fi
 [[ $sent == 0 && "$1" == "--manual" ]] && send "<b>👥 Sedang Online</b>"$'\n'"Tidak ada akun yang online dalam $MIN menit terakhir."
 exit 0
@@ -156,7 +163,7 @@ cat > /usr/local/sbin/m-bot <<'EOF'
 BRAND=$SCNAME
 BOTF=$ASD/bot
 LINE="${B}════════════════════════════════════${N}"
-header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
+header(){ clear; local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); echo -e "${UFR}╔$(printf '═%.0s' $(seq $w))╗${N}"; printf "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $p "" "$t" $r ""; echo -e "${UFR}╚$(printf '═%.0s' $(seq $w))╝${N}"; }
 pause(){ echo; read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; }
 # Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
 cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }

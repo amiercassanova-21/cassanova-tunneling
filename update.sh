@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.47.0"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.0"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -52,6 +52,7 @@ type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
 type cas_notify_quote &>/dev/null || cas_notify_quote(){ :; }
 R='\e[31m'; G='\e[32m'; Y='\e[33m'; B='\e[34m'; C='\e[36m'; P='\e[35m'; W='\e[1;97m'; O='\e[38;5;208m'; N='\e[0m'
 BGB='\e[44m'; BG='\e[41m'
+UBG='\e[48;5;93m'; UFR='\e[38;5;141m'   # ungu: latar banner & bingkai (identitas Cassanova)
 CFG=/usr/local/etc/xray/config.json
 ASD=/etc/autoscript
 API=127.0.0.1:10085
@@ -328,8 +329,8 @@ if [[ "$2" == "--delete" && -n "$3" ]]; then lock_db; remove_account $PROTO "$3"
 if [[ "$2" == "--expire" ]]; then lock_db; expire_all; unlock_db; exit 0; fi
 
 LINE="${B}════════════════════════════════════${N}"
-header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
-bar(){ echo -e "$LINE"; printf "${BGB}${W}%*s%*s${N}\n" $(( (36+${#1})/2 )) "$1" $(( 36-(36+${#1})/2 )) ""; echo -e "$LINE"; }
+header(){ clear; local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); echo -e "${UFR}╔$(printf '═%.0s' $(seq $w))╗${N}"; printf "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $p "" "$t" $r ""; echo -e "${UFR}╚$(printf '═%.0s' $(seq $w))╝${N}"; }
+bar(){ local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); printf "${UBG}${W}%*s%s%*s${N}\n" $p "" "$t" $r ""; }
 pause(){ echo; if [[ -n "$QUICK" ]]; then read -rp "$(echo -e "${P}Press Enter to Exit${N}")"; else read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; fi; }
 msg(){ echo -e "$1"; sleep 2; }
 # Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
@@ -611,9 +612,11 @@ delete(){
   else pick_user || return; confirm_pick || return; fi
   local dexp=$(db_field $PROTO "$U" 2)
   lock_db; remove_account $PROTO "$U"; unlock_db
-  cas_notify_quote "⛔ Akun Dihapus" "<pre>Nama   : $U
-Jenis  : $UP
-Aktif  : sampai $(cas_tgl "$dexp")</pre>Masuk daftar Recovery."
+  cas_notify_raw "<blockquote><b>Hapus User</b></blockquote>
+$DOMAIN
+<pre>User   : $U
+Type   : $PROTO
+Status : Dihapus (Recovery)</pre>"
   done_box "DELETE Successfully" "USER" "$U" "STATUS" "DELETED (masuk Recovery)"; pause
 }
 
@@ -633,10 +636,12 @@ renew(){
   st=$(db_field $PROTO "$U" 6)
   if [[ "$st" == "quota" ]]; then xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"; db_set $PROTO "$U" 6 active; fi
   unlock_db
-  cas_notify_quote "✅ Akun Diperpanjang" "<pre>Nama      : $U
-Jenis     : $UP
-Tambahan  : $d hari
-Aktif s/d : $(cas_tgl "$new") ($(cas_sisa "$new"))</pre>"
+  cas_notify_raw "<blockquote><b>Renew / Extend User</b></blockquote>
+$DOMAIN
+<pre>User       : $U
+Added      : $d Days
+Expires on : $(cas_tgl "$new")
+Type       : $PROTO</pre>"
   done_box "RENEW Successfully" "USER" "$U" "ADDED" "$d Days" "EXPIRED" "$new"; pause
 }
 
@@ -904,8 +909,11 @@ center(){ local t="$1"; local l=$(( (WD-${#t})/2 )); local r=$(( WD-${#t}-l )); 
 top(){ echo -e "${B}┌$(printf '─%.0s' $(seq 1 $((WD+2))))┐${N}"; }
 bot(){ echo -e "${B}└$(printf '─%.0s' $(seq 1 $((WD+2))))┘${N}"; }
 row(){ printf "${B}│${N} ${G}%-8s${N}: %s\n" "$1" "$2"; }
-sep(){ echo -e "${B}│${N} ${P}$(printf '─%.0s' $(seq 1 36))${N}"; }
+sep(){ echo -e "${B}│${P}$(printf '─%.0s' $(seq 1 $((WD+2))))${N}"; }
 st(){ systemctl is-active --quiet "$1" && echo -e "${Y}ON${N}" || echo -e "${R}OFF${N}"; }
+rep(){ local i; for ((i=0;i<${2:-0};i++)); do printf "%s" "$1"; done; }
+ubanner(){ local t="$1" w=$((WD+2)) p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); echo -e "${UFR}╔$(rep ═ $w)╗${N}"; printf "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $p "" "$t" $r ""; echo -e "${UFR}╚$(rep ═ $w)╝${N}"; }
+pbar(){ local pct=${1:-0} n=14 f col; (( pct<0 ))&&pct=0; (( pct>100 ))&&pct=100; f=$(( pct*n/100 )); col=$G; (( pct>=70 ))&&col=$Y; (( pct>=90 ))&&col=$R; printf "${B}▕${col}%s${N}%s${B}▏${N}" "$(rep █ $f)" "$(rep ░ $(( n-f )))"; }
 
 dashboard(){
   clear
@@ -914,28 +922,57 @@ dashboard(){
   local CITY=$(jq -r '.city // "-"' $I 2>/dev/null)
   local ISP=$(jq -r '.org // "-"' $I 2>/dev/null | sed 's/^AS[0-9]* //')
   local IP=$(jq -r '.ip // "-"' $I 2>/dev/null)
-  local RAM=$(free -m | awk '/Mem:/{print $2"M"}')
-  local SWAP=$(free -m | awk '/Swap:/{print $2"M"}')
   local UPT=$(uptime -p | sed 's/up //')
   V=$(vnstat --oneline 2>/dev/null)
   if [[ "$V" == 1\;* ]]; then IFS=';' read -ra F <<< "$V"; else F=(- - - - - - - - - - - -); fi
 
-  top; echo -e "${B}│${N} ${BG}${W}$(center "$SCNAME")${N} ${B}│${N}"; bot
+  ubanner "$SCNAME"
   top
-  row "OS" "$PRETTY_NAME"; row "RAM" "$RAM"; row "SWAP" "$SWAP"
-  row "CITY" "$CITY"; row "ISP" "$ISP"
+  row "OS" "$PRETTY_NAME"
+  row "CITY" "$CITY"
+  row "ISP" "$ISP"
   printf "${B}│${N} ${G}%-8s${N}: ${C}%s${N}\n" "IP" "$IP"
   printf "${B}│${N} ${G}%-8s${N}: ${C}%s${N}\n" "DOMAIN" "$DOMAIN"
   row "UPTIME" "$UPT"
   sep
-  row "MONTH" "${F[10]}   [$(date +%B)]"; row "RX" "${F[8]}"; row "TX" "${F[9]}"
-  sep
-  row "DAY" "${F[5]}   [$(date +%A)]"; row "RX" "${F[3]}"; row "TX" "${F[4]}"
+  printf "${B}│${N} ${G}%-8s${N}: %-8s ${C}↓%s${N} ${O}↑%s${N}   [%s]\n" "MONTH" "${F[10]}" "${F[8]}" "${F[9]}" "$(date +%B)"
+  printf "${B}│${N} ${G}%-8s${N}: %-8s ${C}↓%s${N} ${O}↑%s${N}   [%s]\n" "DAY"   "${F[5]}"  "${F[3]}" "${F[4]}" "$(date +%A)"
   row "TRAFFIC" "${F[6]}"
   bot
+  sys_panel
   local S="GOOD"; systemctl is-active --quiet xray && systemctl is-active --quiet nginx || S="ERROR"
   top
   echo -e "${B}│${N} XRAY : $(st xray) ${B}│${N} NGINX : $(st nginx) ${B}│${N} SSH : $(st ssh) ${B}│${N} ${G}$S${N}"
+  bot
+}
+
+sys_panel(){
+  local CPU RAM RAMU RAMT DISK DISKU DISKT LOAD CORE HEALTH HCOLOR CAP hc t
+  [[ -f $ASD/cache/sys ]] && . $ASD/cache/sys
+  if [[ -z "$CPU" ]]; then
+    CORE=$(nproc 2>/dev/null); [[ "$CORE" =~ ^[0-9]+$ ]] || CORE=1
+    LOAD=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)
+    CPU=$(awk -v l="$LOAD" -v c="$CORE" 'BEGIN{v=(c>0)?l/c*100:0; if(v>100)v=100; printf "%d", v}')
+    read RAMU RAMT < <(free -m | awk '/Mem:/{print $3, $2}')
+    RAM=0; (( RAMT>0 )) && RAM=$(( RAMU*100/RAMT ))
+    read DISKU DISKT DISK < <(df -k / | awk 'NR==2{printf "%.1f %.1f %d", $3/1048576, $2/1048576, $5+0}')
+    HCOLOR=G; HEALTH=SEHAT
+    if   (( CPU>=90 || RAM>=90 || DISK>=90 )); then HCOLOR=R; HEALTH=BEBAN
+    elif (( CPU>=70 || RAM>=70 || DISK>=85 )); then HCOLOR=Y; HEALTH=WASPADA; fi
+    CAP="menghitung…"
+  fi
+  case "$HCOLOR" in R) hc=$R;; Y) hc=$Y;; *) hc=$G;; esac
+  t="SYSTEM · cache 30s"
+  top
+  echo -e "${B}│${N}${P}$(center "$t")${N}"
+  sep
+  printf "${B}│${N} ${G}%-4s${N} %s %3s%%  load %s · %score\n" "CPU"  "$(pbar ${CPU:-0})"  "${CPU:-0}"  "${LOAD:-0}" "${CORE:-1}"
+  printf "${B}│${N} ${G}%-4s${N} %s %3s%%  %s / %s MB\n"        "RAM"  "$(pbar ${RAM:-0})"  "${RAM:-0}"  "${RAMU:-0}" "${RAMT:-0}"
+  printf "${B}│${N} ${G}%-4s${N} %s %3s%%  %s / %s GB\n"        "DISK" "$(pbar ${DISK:-0})" "${DISK:-0}" "${DISKU:-0}" "${DISKT:-0}"
+  sep
+  printf "${B}│${N} ${G}%-8s${N}: ${hc}●${N} ${hc}%s${N}\n" "HEALTH" "${HEALTH:-?}"
+  printf "${B}│${N} ${G}%-8s${N}: %s\n" "CAPACITY" "${CAP:-?}"
+  printf "${B}│${N} ${G}%-8s${N}: ketik  ${O}cekvps live${N}\n" "LIVE"
   bot
 }
 
@@ -959,9 +996,13 @@ version_box(){
   lclient=$(cat $ASD/license_client 2>/dev/null); [[ -z "$lclient" ]] && lclient="$(hostname)"
   lexp=$(cat $ASD/license_exp 2>/dev/null)
   if [[ "$lexp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    lleft=$(( ( $(date -d "$lexp" +%s) - $(date +%s) ) / 86400 ))
-    (( lleft < 0 )) && lleft=0
-    lexp="$lexp (${lleft} hari)"
+    if (( ${lexp%%-*} >= 2090 )); then
+      lexp="Lifetime"
+    else
+      lleft=$(( ( $(date -d "$lexp" +%s) - $(date +%s) ) / 86400 ))
+      (( lleft < 0 )) && lleft=0
+      lexp="$lexp (${lleft} hari)"
+    fi
   else
     lexp="Lifetime"
   fi
@@ -1208,7 +1249,7 @@ cat > /usr/local/sbin/m-all <<'EOF'
 DOMAIN=$(cat $ASD/domain)
 LINE="${B}════════════════════════════════════${N}"
 BR="────────────────────────────────"
-header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
+header(){ clear; local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); echo -e "${UFR}╔$(printf '═%.0s' $(seq $w))╗${N}"; printf "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $p "" "$t" $r ""; echo -e "${UFR}╚$(printf '═%.0s' $(seq $w))╝${N}"; }
 sec(){ echo -e "${B}$BR${N}"; printf "${Y}%*s${N}\n" $(( (32+${#1})/2 )) "$1"; echo -e "${B}$BR${N}"; }
 die(){ echo -e "\n ${R}$1${N}\n"; read -rp "Tekan Enter..."; exit 1; }
 num_ok(){ [[ "$1" =~ ^[0-9]+$ ]]; }
@@ -2229,6 +2270,103 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 0 9 * * * root /usr/local/sbin/cas-license-warn
 EOF
 chmod 644 /etc/cron.d/autoscript
+
+# =====================================================
+#  TUNING SISTEM (RPS) + CACHE METRIK LAYAR AWAL
+# =====================================================
+cat > /usr/local/sbin/cas-rps <<'EOF'
+#!/bin/bash
+# RPS/RFS: sebar softirq NIC ke semua core (atasi bottleneck single-queue virtio di CPU0).
+# Tidak menyentuh limit-IP/kuota (itu bekerja di layer /proc/net & xray stats, berbeda).
+cores=$(nproc 2>/dev/null); [[ "$cores" =~ ^[0-9]+$ ]] || cores=1
+(( cores>31 )) && cores=31
+mask=$(printf '%x' $(( (1<<cores)-1 )))
+for nic in /sys/class/net/*; do
+  n=$(basename "$nic"); [[ "$n" == lo ]] && continue
+  for q in "$nic"/queues/rx-*; do
+    [[ -w "$q/rps_cpus" ]]     && echo "$mask" > "$q/rps_cpus" 2>/dev/null
+    [[ -w "$q/rps_flow_cnt" ]] && echo 4096    > "$q/rps_flow_cnt" 2>/dev/null
+  done
+done
+sysctl -qw net.core.rps_sock_flow_entries=32768 2>/dev/null
+sysctl -qw net.core.netdev_max_backlog=100000   2>/dev/null
+sysctl -qw net.core.netdev_budget=600           2>/dev/null
+exit 0
+EOF
+chmod +x /usr/local/sbin/cas-rps
+
+cat > /usr/local/sbin/cas-syscache <<'EOF'
+#!/bin/bash
+. /usr/local/lib/autoscript/lib.sh
+mkdir -p $ASD/cache
+calc(){
+  local u n s i w irq sirq idle1 tot1 idle2 tot2 dt di cpu core load ramu ramt ram disku diskt disk freemb est hc h cap
+  read _ u n s i w irq sirq _ < /proc/stat
+  idle1=$((i+w)); tot1=$((u+n+s+i+w+irq+sirq))
+  sleep 1
+  read _ u n s i w irq sirq _ < /proc/stat
+  idle2=$((i+w)); tot2=$((u+n+s+i+w+irq+sirq))
+  dt=$((tot2-tot1)); di=$((idle2-idle1)); cpu=0; (( dt>0 )) && cpu=$(( (100*(dt-di))/dt ))
+  core=$(nproc 2>/dev/null); [[ "$core" =~ ^[0-9]+$ ]] || core=1
+  load=$(cut -d' ' -f1 /proc/loadavg)
+  read ramu ramt < <(free -m | awk '/Mem:/{print $3, $2}')
+  ram=0; (( ramt>0 )) && ram=$(( ramu*100/ramt ))
+  read disku diskt disk < <(df -k / | awk 'NR==2{printf "%.1f %.1f %d", $3/1048576, $2/1048576, $5+0}')
+  freemb=$(free -m | awk '/Mem:/{print $7}'); [[ "$freemb" =~ ^[0-9]+$ ]] || freemb=$(( ramt-ramu ))
+  est=$(( freemb/5 ))
+  hc=G; h=SEHAT
+  if   (( cpu>=90 || ram>=90 || disk>=90 )); then hc=R; h=BEBAN
+  elif (( cpu>=70 || ram>=70 || disk>=85 )); then hc=Y; h=WASPADA; fi
+  cap="lega"; (( est<200 )) && cap="cukup"; (( est<80 )) && cap="mepet"; [[ "$hc" == R ]] && cap="mepet"
+  cat > $ASD/cache/sys <<EOC
+CPU="$cpu"
+RAM="$ram"
+RAMU="$ramu"
+RAMT="$ramt"
+DISK="$disk"
+DISKU="$disku"
+DISKT="$diskt"
+LOAD="$load"
+CORE="$core"
+HEALTH="$h"
+HCOLOR="$hc"
+CAP="$cap — estimasi ±${est} akun lagi"
+TS="$(date +%s)"
+EOC
+}
+[[ "$1" == "--once" ]] && { calc; exit 0; }
+while :; do calc; sleep 29; done
+EOF
+chmod +x /usr/local/sbin/cas-syscache
+
+cat > /etc/systemd/system/cas-rps.service <<'EOF'
+[Unit]
+Description=Cassanova RPS/RFS tuning
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cas-rps
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/cas-syscache.service <<'EOF'
+[Unit]
+Description=Cassanova system metrics cache
+After=network.target
+[Service]
+ExecStart=/usr/local/sbin/cas-syscache
+Restart=always
+Nice=10
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload 2>/dev/null
+systemctl enable --now cas-rps.service      >/dev/null 2>&1
+systemctl enable --now cas-syscache.service >/dev/null 2>&1
 
 # =====================================================
 #  SELESAI

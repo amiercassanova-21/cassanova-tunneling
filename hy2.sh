@@ -141,7 +141,7 @@ SECRET=$(cat $ASD/hy2_secret 2>/dev/null)
 touch "$DB" "$TRASH"
 # Format DB: user exp pass iplimit quota status(active|locked)
 LINE="${B}════════════════════════════════════${N}"
-header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
+header(){ clear; local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); echo -e "${UFR}╔$(printf '═%.0s' $(seq $w))╗${N}"; printf "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $p "" "$t" $r ""; echo -e "${UFR}╚$(printf '═%.0s' $(seq $w))╝${N}"; }
 pause(){ echo; read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; }
 msg(){ echo -e "$1"; sleep 2; }
 cas_run(){ ( trap 'exit 130' INT; eval "$*" ); }
@@ -288,8 +288,12 @@ renew(){
   exp=$(date -d "$cur +$d days" +%F)
   lock_db; hset "$U" 2 "$exp"; hset "$U" 6 active; unlock_db
   msg "${G}$U diperpanjang s.d. $exp${N}"
-  cas_notify "🔄 Akun Diperpanjang" "<pre>HY2 : $U
-Aktif s.d. : $exp</pre>"
+  cas_notify_raw "<blockquote><b>Renew / Extend User</b></blockquote>
+$DOMAIN
+<pre>User       : $U
+Added      : $d Days
+Expires on : $(cas_tgl "$exp")
+Type       : hysteria2</pre>"
 }
 
 delete(){
@@ -299,7 +303,11 @@ delete(){
   local dexp; dexp=$(hf "$U" 2)
   lock_db; hy_remove "$U"; unlock_db
   msg "${G}$U dihapus${N}"
-  cas_notify "🗑 Akun Dihapus" "<pre>HY2 : $U</pre>Masuk daftar Recovery."
+  cas_notify_raw "<blockquote><b>Hapus User</b></blockquote>
+$DOMAIN
+<pre>User   : $U
+Type   : hysteria2
+Status : Dihapus (Recovery)</pre>"
 }
 
 show_link(){

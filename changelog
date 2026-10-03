@@ -1,3 +1,32 @@
+v1.48.0
+TAMPILAN UNGU + PANEL SISTEM + RESTYLE NOTIF BOT
+- Judul SEMUA menu (utama + submenu) jadi banner UNGU double-line seragam
+  (identitas Cassanova, beda dari Potato). Sub-header jadi bar ungu tipis.
+- Layar awal dirombak:
+  * Judul CASSANOVA TUNNELING = banner ungu.
+  * Baris RAM/SWAP lama dihapus; ISP di bawah CITY.
+  * MONTH & DAY jadi satu baris (↓RX ↑TX); TRAFFIC (kecepatan) di bawah.
+  * Panel SYSTEM baru: CPU/RAM/DISK + bar warna, HEALTH, CAPACITY, LIVE.
+    Angka dari cache latar (service cas-syscache ~30s) -> menu tetap enteng.
+  * Garis pemisah dalam selebar kotak; LIST ACCOUNTS dipertahankan.
+- Expiry In -> "Lifetime" untuk tanggal sangat jauh (tahun >= 2090).
+- RPS/RFS default: service cas-rps sebar softirq NIC ke semua core saat boot
+  (turunkan beban CPU0). Tidak menyentuh limit-IP/kuota.
+- Bot: notif "Sedang Online" gaya Potato -> header kotak IP/DOMAIN/ISP,
+  kolom nama.kuota.IP.angka lurus, "Total online: N akun".
+- Bot: notif Renew & Hapus gaya Potato (tanpa icon, label bar, domain di atas);
+  berlaku vless/vmess/trojan/ssh/hysteria2.
+- Rincian akun bot tetap Pilihan A (kotak <pre> + salin per-link + semua field).
+- Monitoring: tambah "Semua Akun Online" (perintah cekonline) dan
+  "Top Pemakai Bandwidth" (perintah topuser). Read-only.
+
+BELUM DISERTAKAN (menunggu uji di Test SC, menyentuh layanan live):
+- ON/OFF layanan per-protokol (Start/Stop Service per-service sudah ada).
+- Change HTTP Response WS (Banner SSH sudah ada).
+- Subscription link per akun.
+KEAMANAN (#1, dari v1.47.0): kode siap; deploy Worker/token/repo-private
+dilakukan manual oleh admin (lihat PANDUAN-KEAMANAN-WORKER.md).
+
 v1.47.0
 KEAMANAN: PENGIRIMAN FILE LEWAT WORKER (REPO PRIVATE) + WATERMARK
 - Semua file SC kini diambil lewat Worker (endpoint /raw/<file>), bukan lagi dari

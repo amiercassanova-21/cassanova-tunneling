@@ -247,8 +247,8 @@ DOMAIN=$(cat $ASD/domain)
 touch "$DB" "$TRASH"
 # Format DB: user exp ipl status(active|locked|banned:epoch)
 LINE="${B}════════════════════════════════════${N}"
-header(){ clear; echo -e "$LINE"; printf "${P}%*s${N}\n" $(( (36+${#1})/2 )) "$1"; echo -e "$LINE"; }
-bar(){ echo -e "$LINE"; printf "${BGB}${W}%*s%*s${N}\n" $(( (36+${#1})/2 )) "$1" $(( 36-(36+${#1})/2 )) ""; echo -e "$LINE"; }
+header(){ clear; local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); echo -e "${UFR}╔$(printf '═%.0s' $(seq $w))╗${N}"; printf "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $p "" "$t" $r ""; echo -e "${UFR}╚$(printf '═%.0s' $(seq $w))╝${N}"; }
+bar(){ local t="$1" w=46 p r; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; r=$(( w-${#t}-p )); printf "${UBG}${W}%*s%s%*s${N}\n" $p "" "$t" $r ""; }
 pause(){ echo; read -rp "$(echo -e "${P}Press Enter for Back to Manage${N}")"; }
 msg(){ echo -e "$1"; sleep 2; }
 # Ctrl-C di dalam sebuah aksi = kembali ke menu ini, bukan keluar total.
@@ -406,9 +406,11 @@ trial(){
 }
 
 delete(){ pick_user || return; confirm_pick || return; local dexp=$(sf "$U" 2); lock_db; ssh_remove "$U"; unlock_db
-  cas_notify_quote "⛔ Akun Dihapus" "<pre>Nama   : $U
-Jenis  : SSH
-Aktif  : sampai $(cas_tgl "$dexp")</pre>Masuk daftar Recovery."
+  cas_notify_raw "<blockquote><b>Hapus User</b></blockquote>
+$DOMAIN
+<pre>User   : $U
+Type   : ssh
+Status : Dihapus (Recovery)</pre>"
   done_box "DELETE Successfully" "USER" "$U" "STATUS" "DELETED (masuk Recovery)"; pause; }
 
 renew(){
@@ -422,10 +424,12 @@ renew(){
   usermod -U "$U" 2>/dev/null; [[ "$(sf "$U" 4)" != active ]] && sset "$U" 4 active
   rm -f $ASD/usage/ssh/$U   # reset kuota agar terbaca dari nol
   unlock_db
-  cas_notify_quote "✅ Akun Diperpanjang" "<pre>Nama      : $U
-Jenis     : SSH
-Tambahan  : $d hari
-Aktif s/d : $(cas_tgl "$new") ($(cas_sisa "$new"))</pre>"
+  cas_notify_raw "<blockquote><b>Renew / Extend User</b></blockquote>
+$DOMAIN
+<pre>User       : $U
+Added      : $d Days
+Expires on : $(cas_tgl "$new")
+Type       : ssh</pre>"
   done_box "RENEW Successfully" "USER" "$U" "ADDED" "$d Days" "EXPIRED" "$new"; pause
 }
 
