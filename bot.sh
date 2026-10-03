@@ -80,6 +80,30 @@ cas_notify_raw(){ _cas_send "$1"; }
 # cas_notify_plain "teks" -> kirim apa adanya TANPA baris kaki (domain·jam),
 # dipakai notif yang domainnya sudah ditaruh di atas (renew/hapus) agar tidak dobel.
 cas_notify_plain(){ _cas_send "$1" nofoot; }
+# cas_notify_sync "teks" -> kirim SINKRON (menunggu selesai) supaya beberapa
+# pesan yang dikirim beruntun sampai dengan URUTAN yang benar (mis. detail
+# VLESS -> VMESS -> TROJAN pada cek config all-protocol). Footer tetap ikut.
+cas_notify_sync(){
+  local BOT_TOKEN CHAT_ID NOTIFY foot r
+  [[ -f /etc/autoscript/bot ]] || return 0
+  . /etc/autoscript/bot
+  [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" || "$NOTIFY" != "on" ]] && return 0
+  foot=$'\n'"$(_cas_foot)"; [[ "$2" == nofoot ]] && foot=""
+  r=$(curl -s --max-time 15 \
+    --data-urlencode "chat_id=$CHAT_ID" \
+    --data-urlencode "text=$1$foot" \
+    --data-urlencode "parse_mode=HTML" \
+    --data-urlencode "disable_web_page_preview=true" \
+    "https://api.telegram.org/bot$BOT_TOKEN/sendMessage")
+  if [[ "$r" != *'"ok":true'* ]]; then
+    printf '%s | gagal kirim | %s\n' "$(date '+%F %T')" "$(printf '%s' "$r" | head -c 300)" >> $CAS_NLOG
+    curl -s --max-time 15 -o /dev/null \
+      --data-urlencode "chat_id=$CHAT_ID" \
+      --data-urlencode "text=$(printf '%s' "$1" | sed -e 's/<[^>]*>//g')" \
+      "https://api.telegram.org/bot$BOT_TOKEN/sendMessage"
+  fi
+  return 0
+}
 EOF
 
 

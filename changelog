@@ -1,3 +1,19 @@
+v1.48.6
+CEK CONFIG ALL-PROTOCOL KINI MASUK BOT (DETAIL PENUH PER-PROTOKOL)
+- "Cek Config Akun (Semua Protokol)" sekarang mengirim detail LENGKAP tiap
+  protokol ke Telegram, bukan hanya tampil di terminal.
+- Format bot: tiap protokol tampil PENUH berurutan (VLESS lengkap + semua
+  link-nya -> lalu VMESS penuh -> lalu TROJAN penuh -> lalu SSH), persis
+  seperti output create manual per-protokol. BUKAN "semua keterangan dulu
+  baru semua link".
+- Pengiriman SINKRON (cas_notify_sync) khusus mode ini supaya urutan
+  VLESS->VMESS->TROJAN->SSH tidak tertukar.
+- Tiap protokol pakai body yang sama persis dengan create (kotak <code>
+  tap-salin, judul di tengah, convert link 1x klik) -> seragam di seluruh bot.
+- Teknis: subcommand baru "m-xray <proto> --notif <user> [judul]" (kirim 1
+  protokol penuh ke bot tanpa menyentuh terminal); m-all --check memanggilnya
+  per protokol. Tampilan terminal cek config TIDAK berubah.
+
 v1.48.5
 OUTPUT AKUN: TANPA "SALIN KODE" + JUDUL TER-TENGAH
 - Kotak detail & tiap link pakai <code> (bukan <pre>): tetap bisa tap-salin

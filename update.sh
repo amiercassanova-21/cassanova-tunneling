@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.5"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.6"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -51,6 +51,7 @@ type cas_notify &>/dev/null || cas_notify(){ :; }
 type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
 type cas_notify_quote &>/dev/null || cas_notify_quote(){ :; }
 type cas_notify_plain &>/dev/null || cas_notify_plain(){ :; }
+type cas_notify_sync  &>/dev/null || cas_notify_sync(){ cas_notify_raw "$@"; }
 R='\e[31m'; G='\e[32m'; Y='\e[33m'; B='\e[34m'; C='\e[36m'; P='\e[35m'; W='\e[1;97m'; O='\e[38;5;208m'; N='\e[0m'
 BGB='\e[44m'; BG='\e[41m'
 UBG='\e[48;5;93m'; UFR='\e[38;5;141m'   # ungu: latar banner & bingkai (identitas Cassanova)
@@ -405,7 +406,7 @@ show_account(){ # user id exp [notif] [judul]  ; notif -> kirim ke Telegram (aku
   fi
   local netlist="ws,grpc,upgrade"
   (( xhon )) && netlist="ws,grpc,upgrade,xhttp"
-  if [[ "$notif" == notif || "$notif" == quote ]]; then
+  if [[ "$notif" == notif || "$notif" == quote || "$notif" == notifonly ]]; then
     local BR="────────────────────────────────"
     local info="Remarks       : $REM
 CITY          : $CITY
@@ -456,8 +457,16 @@ $BR
 <i>Ketuk tiap kotak untuk menyalin satu per satu.</i>"
     # ✅ dipakai untuk akun baru maupun akun yang dipulihkan: dua-duanya berhasil
     local icon="✅"
-    cas_notify_raw "<b>$icon $ntitle</b>"$'\n'"$body"
+    # notifonly -> dipanggil "m-xray --notif" (cek config all-protocol). Harus
+    # SINKRON supaya urutan VLESS->VMESS->TROJAN tidak tertukar.
+    if [[ "$notif" == notifonly ]]; then
+      cas_notify_sync "<b>$icon $ntitle</b>"$'\n'"$body"
+    else
+      cas_notify_raw  "<b>$icon $ntitle</b>"$'\n'"$body"
+    fi
   fi
+  # notifonly = hanya kirim ke bot, JANGAN sentuh tampilan terminal.
+  [[ "$notif" == notifonly ]] && return 0
   clear
   header "$UP ACCOUNT"
   row "Remarks" "${Y}$REM${N}"
@@ -810,6 +819,16 @@ case "$2" in
     printf 'LINK|%s UPGRADE NON-TLS|%s\n' "$UP" "$(mk_link up 0)"
     { [[ $PROTO == vless && -f $ASD/xhttp_on ]] || [[ $PROTO == trojan && -f $ASD/xhttp_on_trojan ]]; } && \
       printf 'LINK|%s XHTTP TLS|%s\n' "$UP" "$(mk_link xh 1)"
+    exit 0 ;;
+  # --notif user [judul] : kirim DETAIL PENUH protokol ini ke Telegram saja
+  # (info + semua link jadi satu, gaya create), tanpa menyentuh terminal.
+  # Dipakai "Cek Config All Protocol" supaya tiap protokol tampil lengkap
+  # dan berurutan di bot, persis seperti create per-protokol.
+  --notif)
+    nu=$3; [[ -z "$nu" ]] && { echo "ERR|user kosong"; exit 1; }
+    user_exists $PROTO "$nu" || { echo "MISS|$nu"; exit 0; }
+    nid=$(db_field $PROTO "$nu" 3); nexp=$(db_field $PROTO "$nu" 2)
+    show_account "$nu" "$nid" "$nexp" notifonly "${4:-$UP Detail Akun}"
     exit 0 ;;
   # --create user id durasi limitip kuota : dipakai "Create All Protocol".
   # durasi = angka (hari)  atau  angka diakhiri "m" (menit, untuk trial).
@@ -1586,6 +1605,41 @@ if [[ "$1" == --check ]]; then
     done <<< "$out"
   done
   (( found == 0 )) && echo -e "\n ${R}Username '$CU' tidak ditemukan di protokol mana pun.${N}"
+  # -------- Kirim DETAIL PENUH tiap protokol ke bot (seperti create per-protokol) --------
+  # Tiap protokol = 1 pesan lengkap (info + semua link jadi satu), berurutan:
+  # VLESS penuh -> VMESS penuh -> TROJAN penuh, lalu SSH. Terminal di atas tidak diubah.
+  if (( found == 1 )) && [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+    echo -e "\n ${G}Mengirim detail ke Telegram...${N}"
+    for _np in vless vmess trojan; do
+      /usr/local/sbin/m-xray "$_np" --notif "$CU" "${_np^^} Detail Akun" >/dev/null 2>&1
+    done
+    # SSH ke bot (password tidak tersimpan sistem; hanya info sambungan)
+    if awk -v u="$CU" '$1==u{f=1}END{exit !f}' $ASD/db/ssh.db 2>/dev/null; then
+      ssx=$(awk -v u="$CU" '$1==u{print $2}' $ASD/db/ssh.db)
+      ssi=$(awk -v u="$CU" '$1==u{print $3}' $ASD/db/ssh.db)
+      ssip=$(jq -r '.ip // "-"' $ASD/ipinfo.json 2>/dev/null)
+      tg "✅ <b>SSH Detail Akun</b>
+<code>$BR
+           SSH ACCOUNT
+$BR
+ Username      : $CU
+ Domain        : $DOMAIN
+ IP            : $ssip
+ Port OpenSSH  : 22
+ Port Dropbear : 143, 109
+ Port SSH WS   : 80, 443 (/ssh-ws)
+ Port SSL/TLS  : 443
+ BadVPN UDP    : 7100-7900
+ Limit IP      : $([[ "$ssi" == 0 || -z "$ssi" ]] && echo Unlimited || echo "$ssi IP")
+ Expired On    : $ssx
+$BR
+        Format HTTP Custom
+$BR
+$DOMAIN:22@$CU:<password></code>
+<i>Password dibuat saat akun pertama kali dibuat (tidak tersimpan di sistem).</i>"
+    fi
+    echo -e " ${G}Terkirim ke bot${N}"
+  fi
   sec "CONVERT LINK"
   echo -e " Sing-box   : ${C}https://singbox.cassanova.my.id/${N}"
   echo -e " Multi Akun : ${C}https://multi.cassanova.my.id/${N}"
