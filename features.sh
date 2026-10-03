@@ -1123,7 +1123,7 @@ custom_out(){
     echo -e "$LINE\n"
     read -rp "$(echo -e "${G}Pilih [1-5 atau x] : ${N}")" o
     case "$o" in
-      1) read -rp "$(echo -e "${G}Address (mis. x1.amier.cassanova.biz.id) : ${N}")" a
+      1) read -rp "$(echo -e "${G}Address (mis. ruangguru.com) : ${N}")" a
          a=$(echo "$a" | tr -d '[:space:]')
          [[ -z "$a" ]] && { msg "${R}Dibatalkan${N}"; continue; }
          [[ "$a" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || { msg "${R}Format address tidak valid${N}"; continue; }

@@ -1,3 +1,11 @@
+v1.48.11
+RAPIKAN BAGIAN BAWAH OUTPUT BOT + HAPUS CEK MASA AKTIF
+- Bagian "CEK MASA AKTIF" DIHAPUS dari output bot (tidak diperlukan lagi).
+- SUBSCRIPTION, HALAMAN AKUN, CONVERT LINK dirapikan: dipisah baris kosong
+  (lebih lega) dan link-nya jadi LINK BIASA (klik untuk buka), BUKAN kotak
+  tap-salin. Kotak tap-salin tetap hanya untuk detail akun & link config
+  (vless/vmess/trojan/hy2).
+- Custom Output BT: contoh address diganti jadi "ruangguru.com".
 v1.48.10
 HALAMAN /akun GAYA BOT + CUSTOM OUTPUT BT
 [#3] Halaman rincian akun web: https://DOMAIN/akun/<uuid> menampilkan detail

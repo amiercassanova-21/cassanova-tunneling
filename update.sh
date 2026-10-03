@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.10"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.11"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -457,22 +457,17 @@ $(blk "$UP UPGRADE TLS"     "$(mk_link up 1)")
 $(blk "$UP UPGRADE NON-TLS" "$(mk_link up 0)")$xbl
 
 $BR
-🔗 <b>SUBSCRIPTION</b> (semua protokol akun ini)
-<code>https://$DOMAIN/sub/$ID</code>
-$BR
-🌐 <b>HALAMAN AKUN</b> (rincian lengkap, bisa dibagikan)
-<code>https://$DOMAIN/akun/$ID</code>
-$BR
+🔗 <b>SUBSCRIPTION</b> — semua protokol akun ini
+https://$DOMAIN/sub/$ID
+
+🌐 <b>HALAMAN AKUN</b> — rincian lengkap, bisa dibagikan
+https://$DOMAIN/akun/$ID
+
 🔁 <b>CONVERT LINK</b>
-Sing-box   : <code>https://singbox.cassanova.my.id/</code>
-Multi Akun : <code>https://multi.cassanova.my.id/</code>
+Sing-box   : https://singbox.cassanova.my.id/
+Multi Akun : https://multi.cassanova.my.id/
 $BR
-🔎 <b>CEK MASA AKTIF</b>
-<code>https://$DOMAIN/cek</code>
-Buka link di atas, pilih $UP, lalu tempel $idlabel akun ini
-untuk melihat sisa masa aktif dan kuota.
-$BR
-<i>Ketuk tiap kotak untuk menyalin satu per satu.</i>"
+<i>Ketuk tiap kotak akun & link di atas untuk menyalin.</i>"
     # ✅ dipakai untuk akun baru maupun akun yang dipulihkan: dua-duanya berhasil
     local icon="✅"
     # notifonly -> dipanggil "m-xray --notif" (cek config all-protocol). Harus
