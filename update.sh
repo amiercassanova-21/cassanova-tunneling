@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.15"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.16"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -2507,8 +2507,13 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload 2>/dev/null
-systemctl enable --now cas-rps.service      >/dev/null 2>&1
-systemctl enable --now cas-syscache.service >/dev/null 2>&1
+systemctl enable cas-rps.service cas-syscache.service >/dev/null 2>&1
+# WAJIB restart (bukan "enable --now"): pada UPDATE service-nya sudah aktif, jadi
+# "enable --now" tidak menjalankan ulang script yang baru ditulis. restart memaksa
+# ExecStart dijalankan lagi -> tuning cas-rps & logika cas-syscache baru langsung
+# aktif tanpa perlu reboot.
+systemctl restart cas-rps.service      >/dev/null 2>&1
+systemctl restart cas-syscache.service >/dev/null 2>&1
 
 # =====================================================
 #  SELESAI

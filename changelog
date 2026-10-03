@@ -1,3 +1,11 @@
+v1.48.16
+FIX: TUNING/SERVICE BARU TIDAK AKTIF SAAT UPDATE (tanpa reboot)
+- Dulu update pakai "systemctl enable --now cas-rps/cas-syscache". Pada UPDATE
+  service sudah aktif, jadi "enable --now" TIDAK menjalankan ulang script yang
+  baru ditulis -> tuning cas-rps (conntrack dll v1.48.15) & logika cas-syscache
+  (rata-rata CPU v1.48.14) baru aktif setelah reboot.
+- Sekarang update meng-RESTART kedua service -> perubahan langsung aktif tanpa
+  reboot.
 v1.48.15
 OPTIMASI CPU/JARINGAN LEBIH LENGKAP (gabung dari optimasicpu Potato)
 - cas-rps (default, jalan tiap boot) kini TAMBAH:
