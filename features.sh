@@ -1065,6 +1065,40 @@ monitoring(){
   done
 }
 
+# ---- ON/OFF layanan per-protokol (panel; kontrol lewat m-xray --svc) ----
+# Mematikan = blok semua inbound protokol via routing rule (reversible, inbound
+# & client tidak dihapus). Menerapkan me-restart Xray (koneksi putus sesaat).
+onoff_proto(){
+  while true; do
+    clear; header "ON/OFF LAYANAN PROTOKOL"
+    echo -e "\n Status layanan tiap protokol Xray:\n"
+    for p in vless vmess trojan; do
+      st=$(/usr/local/sbin/m-xray "$p" --svc status 2>/dev/null)
+      printf "   ${C}%-8s${N} : %b\n" "${p^^}" "$([[ "$st" == off ]] && echo "${R}OFF (diblokir)${N}" || echo "${G}ON (aktif)${N}")"
+    done
+    echo -e "\n ${Y}Mengubah status me-restart Xray (koneksi semua protokol putus sesaat).${N}"
+    echo -e "$LINE"
+    echo -e " ${C}1.)${N} Toggle VLESS"
+    echo -e " ${C}2.)${N} Toggle VMESS"
+    echo -e " ${C}3.)${N} Toggle TROJAN"
+    echo -e " ${C}x.)${N} Back"
+    echo -e "$LINE\n"
+    read -rp "$(echo -e "${G}Pilih [1-3 atau x] : ${N}")" o
+    case "$o" in
+      1) p=vless ;; 2) p=vmess ;; 3) p=trojan ;;
+      x|X) return ;;
+      *) msg "${R}Pilihan salah${N}"; continue ;;
+    esac
+    r=$(/usr/local/sbin/m-xray "$p" --svc toggle 2>/dev/null)
+    case "$r" in
+      OK\|off) msg "${G}${p^^} DIMATIKAN.${N}" ;;
+      OK\|on)  msg "${G}${p^^} DINYALAKAN.${N}" ;;
+      ERR\|config) msg "${R}Config error, dikembalikan. Tidak ada perubahan.${N}" ;;
+      *) msg "${R}Gagal: ${r:-tidak ada respons}${N}" ;;
+    esac
+  done
+}
+
 # mode non-interaktif: adddomain
 if [[ "$1" == "--domain" ]]; then change_domain; exit 0; fi
 if [[ "$1" == "--port" ]]; then cek_port; exit 0; fi
@@ -1084,18 +1118,19 @@ while true; do
   echo -e " ${C}8.)${N}  Restore Configuration VPS"
   bar "SYSTEM"
   echo -e " ${C}9.)${N}  Start/Stop Service"
-  echo -e " ${C}10.)${N} Security SYN & Optimasi"
-  echo -e " ${C}11.)${N} Change Domain VPS"
-  echo -e " ${C}12.)${N} Information System"
-  echo -e " ${C}13.)${N} Cek Port VPS"
-  echo -e " ${C}14.)${N} Auto Update"
+  echo -e " ${C}10.)${N} ON/OFF Protokol"
+  echo -e " ${C}11.)${N} Security SYN & Optimasi"
+  echo -e " ${C}12.)${N} Change Domain VPS"
+  echo -e " ${C}13.)${N} Information System"
+  echo -e " ${C}14.)${N} Cek Port VPS"
+  echo -e " ${C}15.)${N} Auto Update"
   bar "MONITORING"
-  echo -e " ${C}15.)${N} Cek VPS (Monitoring)"
-  echo -e " ${C}16.)${N} Back to Menu"
+  echo -e " ${C}16.)${N} Cek VPS (Monitoring)"
+  echo -e " ${C}17.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-16 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-17 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "check_bandwidth" ;;
@@ -1109,13 +1144,14 @@ while true; do
     7) cas_run "backup_vps" ;;
     8) cas_run "restore_vps" ;;
     9) cas_run "start_stop" ;;
-    10) cas_run "security_syn" ;;
-    11) cas_run "change_domain" ;;
-    12) cas_run "info_system" ;;
-    13) cas_run "cek_port" ;;
-    14) cas-update; exit 0 ;;
-    15) cas_run "monitoring" ;;
-    16) exit 0 ;;
+    10) cas_run "onoff_proto" ;;
+    11) cas_run "security_syn" ;;
+    12) cas_run "change_domain" ;;
+    13) cas_run "info_system" ;;
+    14) cas_run "cek_port" ;;
+    15) cas-update; exit 0 ;;
+    16) cas_run "monitoring" ;;
+    17) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
@@ -1150,10 +1186,11 @@ while true; do
   echo -e " ${C}4.)${N} Set OFF With User"
   echo -e " ${C}5.)${N} Change Brand Name"
   echo -e " ${C}6.)${N} Change Banner SSH"
-  echo -e " ${C}7.)${N} Back to Menu"
+  echo -e " ${C}7.)${N} Change Response WS"
+  echo -e " ${C}8.)${N} Back to Menu"
   echo -e " ${C}x.)${N} Exit"
   echo -e "\n$LINE"
-  read -rp "$(echo -e "${G}Select From Options [1-7 or x] : ${N}")" o
+  read -rp "$(echo -e "${G}Select From Options [1-8 or x] : ${N}")" o
   case $o in
     1) echo on  > $ASD/brand_uuid; echo -e "${G}Brand Name ON${N}"; sleep 1 ;;
     2) echo on  > $ASD/brand_user; echo -e "${G}With User ON${N}"; sleep 1 ;;
@@ -1168,7 +1205,30 @@ while true; do
        while IFS= read -r l; do [[ "$l" == "END" ]] && break; echo "$l" >> /tmp/cas-banner; done
        cp /tmp/cas-banner $ASD/banner.txt; rm -f /tmp/cas-banner
        echo -e "${G}Banner diganti${N}"; sleep 2 ;;
-    7) exit 0 ;;
+    7) # Change Response WS (SSH-WS) : ganti baris respons handshake ws-ssh.
+       # Hanya SSH-WS; WS Xray diurus Nginx/Xray. Simpan di ws_response lalu restart.
+       RF=$ASD/ws_response
+       echo -e "\n ${G}Change Response WS (SSH-WS)${N}"
+       echo -e " Sekarang : ${O}$(head -1 "$RF" 2>/dev/null || echo 'HTTP/1.1 101 Switching Protocols (default)')${N}"
+       echo -e " (Hanya SSH-WS. WS Xray diurus Nginx/Xray.)\n"
+       echo -e " ${C}1.)${N} Default (HTTP/1.1 101 Switching Protocols)"
+       echo -e " ${C}2.)${N} 200 OK  (HTTP/1.1 200 OK)"
+       echo -e " ${C}3.)${N} Custom  (ketik baris respons sendiri)"
+       echo -e " ${C}x.)${N} Batal"
+       read -rp "$(echo -e "\n${G}Pilih [1-3 atau x] : ${N}")" rc
+       case "$rc" in
+         1) printf 'HTTP/1.1 101 Switching Protocols\nUpgrade: websocket\nConnection: Upgrade\n' > "$RF"
+            systemctl restart ws-ssh 2>/dev/null; echo -e "${G}Respons WS: Default. ws-ssh direstart.${N}"; sleep 2 ;;
+         2) printf 'HTTP/1.1 200 OK\n' > "$RF"
+            systemctl restart ws-ssh 2>/dev/null; echo -e "${G}Respons WS: 200 OK. ws-ssh direstart.${N}"; sleep 2 ;;
+         3) echo -e "\n Contoh: ${Y}HTTP/1.1 101 CASSANOVA${N}  atau  ${Y}HTTP/1.1 200 OK${N}"
+            read -rp "$(echo -e "${G}Ketik baris respons : ${N}")" rr
+            [[ -z "$rr" ]] && { echo -e "${R}Dibatalkan (kosong)${N}"; sleep 2; continue; }
+            printf '%s\n' "$rr" > "$RF"
+            systemctl restart ws-ssh 2>/dev/null; echo -e "${G}Respons WS diperbarui. ws-ssh direstart.${N}"; sleep 2 ;;
+         *) : ;;
+       esac ;;
+    8) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
   esac
 done

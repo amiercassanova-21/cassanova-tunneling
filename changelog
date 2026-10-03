@@ -1,3 +1,18 @@
+v1.48.9
+PINDAH MENU ON/OFF & RESPONSE WS KE FEATURES + OUTPUT CEK CONFIG RAPI
+- ON/OFF Protokol: dipindah dari menu per-protokol -> Features -> SYSTEM
+  (item "ON/OFF Protokol"), jadi 1 panel yang menampilkan status VLESS/VMESS/
+  TROJAN sekaligus + toggle. Konsisten dgn "Start/Stop Service" yg sudah di SYSTEM.
+  Teknis: logika jadi subcommand "m-xray <proto> --svc on|off|toggle|status"
+  (DRY), dipanggil panel m-feature.
+- Change Response WS: dipindah dari menu SSH -> Features -> "Set Brand Name"
+  (dekat Change Banner SSH). Isi sama: Default 101 / 200 OK / Custom.
+- Menu per-protokol (VLESS/VMESS/TROJAN) & menu SSH kembali bersih (hanya aksi
+  per-akun); setelan & kontrol layanan terkumpul di Features.
+- Output terminal "Cek Config Akun (Semua Protokol)" dirapikan: tiap link kini
+  dipisah garis + judul di tengah (seragam dengan tampilan bot & create-all),
+  jadi jauh lebih mudah dibaca.
+
 v1.48.8
 ITEM 2 (FITUR LIVE): ON/OFF PROTOKOL, RESPONSE WS, SUBSCRIPTION
 [#4] ON/OFF layanan per-protokol (menu VLESS/VMESS/TROJAN -> "ON/OFF Layanan"):

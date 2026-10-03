@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.8"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.9"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -880,43 +880,32 @@ case "$2" in
       --recovery) recovery ;;
     esac
     exit 0 ;;
+  # --svc on|off|toggle|status : ON/OFF layanan protokol via routing block
+  # (dipanggil panel "ON/OFF Protokol" di m-feature). Inbound & client TIDAK
+  # diubah -> reversible. status: cetak on/off; selain itu terapkan + restart.
+  --svc)
+    _act=$3
+    _svcoff(){ jq -e --arg p "$PROTO-" 'any(.routing.rules[]?; .outboundTag=="blocked" and (any((.inboundTag // [])[]; startswith($p))))' "$CFG" >/dev/null 2>&1; }
+    case "$_act" in
+      status) _svcoff && echo off || echo on; exit 0 ;;
+      toggle) _svcoff && _act=on || _act=off ;;
+      on|off) : ;;
+      *) echo "ERR|arg"; exit 1 ;;
+    esac
+    cp -f "$CFG" "${CFG}.svcbak"
+    if [[ "$_act" == off ]]; then
+      _tags=$(jq -c --arg p "$PROTO-" '[.inbounds[]|select(.tag|startswith($p))|.tag]' "$CFG")
+      [[ -z "$_tags" || "$_tags" == "[]" ]] && { echo "ERR|tidak ada inbound"; exit 1; }
+      jq --argjson t "$_tags" '.routing.rules += [{"type":"field","inboundTag":$t,"outboundTag":"blocked"}]' "$CFG" > /tmp/cas-svc.json && mv /tmp/cas-svc.json "$CFG"
+    else
+      jq --arg p "$PROTO-" '.routing.rules |= map(select((.outboundTag=="blocked" and (any((.inboundTag // [])[]; startswith($p))))|not))' "$CFG" > /tmp/cas-svc.json && mv /tmp/cas-svc.json "$CFG"
+    fi
+    if xray run -test -config "$CFG" >/dev/null 2>&1; then
+      systemctl restart xray; echo "OK|$_act"; exit 0
+    else
+      cp -f "${CFG}.svcbak" "$CFG"; echo "ERR|config"; exit 1
+    fi ;;
 esac
-
-
-# ---- ON/OFF layanan per-protokol (blok via routing, inbound tetap utuh) ----
-# Status OFF = ada routing rule outboundTag "blocked" yang menyasar tag inbound
-# protokol ini. ON = rule itu tidak ada. Client & inbound TIDAK diubah.
-svc_is_off(){ jq -e --arg p "$PROTO-" 'any(.routing.rules[]?; .outboundTag=="blocked" and (any((.inboundTag // [])[]; startswith($p))))' "$CFG" >/dev/null 2>&1; }
-svc_state_lbl(){ svc_is_off && echo -e "${R}[OFF]${N}" || echo -e "${G}[ON]${N}"; }
-toggle_svc(){
-  header "ON/OFF LAYANAN $UP"
-  if svc_is_off; then
-    echo -e "\n Status $UP sekarang: ${R}OFF (diblokir)${N}"
-    read -rp "$(echo -e "\n${G}Nyalakan kembali layanan $UP? [y/N] : ${N}")" c
-    [[ "$c" =~ ^[yY]$ ]] || { msg "Dibatalkan"; return 1; }
-    cp -f "$CFG" "${CFG}.svcbak"
-    jq --arg p "$PROTO-" '.routing.rules |= map(select((.outboundTag=="blocked" and (any((.inboundTag // [])[]; startswith($p))))|not))' "$CFG" > /tmp/cas-svc.json && mv /tmp/cas-svc.json "$CFG"
-    local act="DINYALAKAN"
-  else
-    echo -e "\n Status $UP sekarang: ${G}ON (aktif)${N}"
-    echo -e " Mematikan = SEMUA koneksi $UP diblokir (akun tetap tersimpan)."
-    echo -e " ${Y}Catatan: menerapkan perubahan me-restart Xray (koneksi semua protokol putus sesaat).${N}"
-    read -rp "$(echo -e "\n${G}Matikan layanan $UP? [y/N] : ${N}")" c
-    [[ "$c" =~ ^[yY]$ ]] || { msg "Dibatalkan"; return 1; }
-    local tags; tags=$(jq -c --arg p "$PROTO-" '[.inbounds[]|select(.tag|startswith($p))|.tag]' "$CFG")
-    [[ -z "$tags" || "$tags" == "[]" ]] && { msg "${R}Tidak ada inbound $UP${N}"; return 1; }
-    cp -f "$CFG" "${CFG}.svcbak"
-    jq --argjson t "$tags" '.routing.rules += [{"type":"field","inboundTag":$t,"outboundTag":"blocked"}]' "$CFG" > /tmp/cas-svc.json && mv /tmp/cas-svc.json "$CFG"
-    local act="DIMATIKAN"
-  fi
-  if xray run -test -config "$CFG" >/dev/null 2>&1; then
-    systemctl restart xray
-    msg "${G}Layanan $UP $act.${N}"
-  else
-    cp -f "${CFG}.svcbak" "$CFG"
-    msg "${R}Config error, dikembalikan ke semula. Tidak ada perubahan.${N}"
-  fi
-}
 
 while true; do
   header "$UP"
@@ -938,12 +927,11 @@ while true; do
   echo -e " ${C}14.)${N} Edit Limit IP All"
   echo -e " ${C}15.)${N} Edit Limit Bandwidth"
   echo -e " ${C}16.)${N} Edit Limit All Bandwidth"
-  echo -e " ${C}17.)${N} ON/OFF Layanan $UP $(svc_state_lbl)"
-  echo -e " ${C}18.)${N} Back to Menu"
+  echo -e " ${C}17.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-18 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-17 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "create 0" ;;
@@ -962,8 +950,7 @@ while true; do
     14) cas_run "edit_field 4 1" ;;
     15) cas_run "edit_field 5 0" ;;
     16) cas_run "edit_field 5 1" ;;
-    17) cas_run "toggle_svc" ;;
-    18) exit 0 ;;
+    17) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
@@ -1639,9 +1626,13 @@ if [[ "$1" == --check ]]; then
     echo -e " Username : ${Y}$ou${N}"
     echo -e " $([[ $_p == trojan ]] && echo Password || echo id)      : $oid"
     echo -e " Expired  : $oexp   Limit IP: $([[ "$oipl" == 0 ]] && echo Unlimited || echo "$oipl")   Kuota: $([[ "$oq" == 0 ]] && echo Unlimited || echo "$oq GB")"
+    # tiap link dipisah garis + judul di tengah (seragam dengan tampilan bot)
     while IFS='|' read -r t lbl val; do
       [[ "$t" == LINK ]] || continue
-      echo -e " ${G}$lbl${N}"; echo "  $val"
+      echo -e "${B}$BR${N}"
+      printf "${G}%*s${N}\n" $(( (32+${#lbl})/2 )) "$lbl"
+      echo -e "${B}$BR${N}"
+      echo " $val"
     done <<< "$out"
   done
   (( found == 0 )) && echo -e "\n ${R}Username '$CU' tidak ditemukan di protokol mana pun.${N}"

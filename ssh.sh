@@ -553,33 +553,6 @@ if [[ "$2" == "--create" ]]; then
   exit 0
 fi
 
-# ---- Change Response WS (SSH-WS) : ganti baris respons handshake ws-ssh ----
-change_resp(){
-  local RF=$ASD/ws_response
-  header "CHANGE RESPONSE WS (SSH-WS)"
-  echo -e "\n Respons sekarang:"
-  echo -e " ${C}$(head -1 "$RF" 2>/dev/null || echo 'HTTP/1.1 101 Switching Protocols (default)')${N}"
-  echo -e "\n Hanya untuk SSH-WS (/ssh-ws & path /). WS Xray diurus Nginx/Xray."
-  echo -e "\n ${C}1.)${N} Default  (HTTP/1.1 101 Switching Protocols)"
-  echo -e " ${C}2.)${N} 200 OK   (HTTP/1.1 200 OK)"
-  echo -e " ${C}3.)${N} Custom   (ketik baris respons sendiri)"
-  echo -e " ${C}x.)${N} Batal"
-  echo -e "$LINE\n"
-  read -rp "$(echo -e "${G}Pilih [1-3 atau x] : ${N}")" rc
-  case "$rc" in
-    1) printf 'HTTP/1.1 101 Switching Protocols\nUpgrade: websocket\nConnection: Upgrade\n' > "$RF" ;;
-    2) printf 'HTTP/1.1 200 OK\n' > "$RF" ;;
-    3) echo -e "\n Contoh: ${Y}HTTP/1.1 101 CASSANOVA${N}  atau  ${Y}HTTP/1.1 200 OK${N}"
-       read -rp "$(echo -e "${G}Ketik baris respons : ${N}")" rr
-       [[ -z "$rr" ]] && { msg "${R}Dibatalkan (kosong)${N}"; return 1; }
-       printf '%s\n' "$rr" > "$RF" ;;
-    x|X) return 1 ;;
-    *) msg "${R}Pilihan salah${N}"; return 1 ;;
-  esac
-  systemctl restart ws-ssh 2>/dev/null
-  msg "${G}Respons WS diperbarui & ws-ssh direstart.${N}"
-}
-
 while true; do
   header "SSH-DROPBEAR-OPENVPN"
   echo -e "\n ${C}1.)${N}  Create"
@@ -596,12 +569,11 @@ while true; do
   echo -e " ${C}10.)${N} Recovery"
   echo -e " ${C}11.)${N} Edit Limit IP"
   echo -e " ${C}12.)${N} Edit Limit IP All"
-  echo -e " ${C}13.)${N} Change Response WS"
-  echo -e " ${C}14.)${N} Back to Menu"
+  echo -e " ${C}13.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-14 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-13 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "create" ;;
@@ -616,8 +588,7 @@ while true; do
     10) cas_run "recovery" ;;
     11) cas_run "edit_limit 0" ;;
     12) cas_run "edit_limit 1" ;;
-    13) cas_run "change_resp" ;;
-    14) exit 0 ;;
+    13) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
