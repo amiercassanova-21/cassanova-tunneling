@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.7"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.8"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -445,6 +445,9 @@ $(blk "$UP UPGRADE TLS"     "$(mk_link up 1)")
 $(blk "$UP UPGRADE NON-TLS" "$(mk_link up 0)")$xbl
 
 $BR
+🔗 <b>SUBSCRIPTION</b> (semua protokol akun ini)
+<code>https://$DOMAIN/sub/$ID</code>
+$BR
 🔁 <b>CONVERT LINK</b>
 Sing-box   : <code>https://singbox.cassanova.my.id/</code>
 Multi Akun : <code>https://multi.cassanova.my.id/</code>
@@ -880,6 +883,41 @@ case "$2" in
 esac
 
 
+# ---- ON/OFF layanan per-protokol (blok via routing, inbound tetap utuh) ----
+# Status OFF = ada routing rule outboundTag "blocked" yang menyasar tag inbound
+# protokol ini. ON = rule itu tidak ada. Client & inbound TIDAK diubah.
+svc_is_off(){ jq -e --arg p "$PROTO-" 'any(.routing.rules[]?; .outboundTag=="blocked" and (any((.inboundTag // [])[]; startswith($p))))' "$CFG" >/dev/null 2>&1; }
+svc_state_lbl(){ svc_is_off && echo -e "${R}[OFF]${N}" || echo -e "${G}[ON]${N}"; }
+toggle_svc(){
+  header "ON/OFF LAYANAN $UP"
+  if svc_is_off; then
+    echo -e "\n Status $UP sekarang: ${R}OFF (diblokir)${N}"
+    read -rp "$(echo -e "\n${G}Nyalakan kembali layanan $UP? [y/N] : ${N}")" c
+    [[ "$c" =~ ^[yY]$ ]] || { msg "Dibatalkan"; return 1; }
+    cp -f "$CFG" "${CFG}.svcbak"
+    jq --arg p "$PROTO-" '.routing.rules |= map(select((.outboundTag=="blocked" and (any((.inboundTag // [])[]; startswith($p))))|not))' "$CFG" > /tmp/cas-svc.json && mv /tmp/cas-svc.json "$CFG"
+    local act="DINYALAKAN"
+  else
+    echo -e "\n Status $UP sekarang: ${G}ON (aktif)${N}"
+    echo -e " Mematikan = SEMUA koneksi $UP diblokir (akun tetap tersimpan)."
+    echo -e " ${Y}Catatan: menerapkan perubahan me-restart Xray (koneksi semua protokol putus sesaat).${N}"
+    read -rp "$(echo -e "\n${G}Matikan layanan $UP? [y/N] : ${N}")" c
+    [[ "$c" =~ ^[yY]$ ]] || { msg "Dibatalkan"; return 1; }
+    local tags; tags=$(jq -c --arg p "$PROTO-" '[.inbounds[]|select(.tag|startswith($p))|.tag]' "$CFG")
+    [[ -z "$tags" || "$tags" == "[]" ]] && { msg "${R}Tidak ada inbound $UP${N}"; return 1; }
+    cp -f "$CFG" "${CFG}.svcbak"
+    jq --argjson t "$tags" '.routing.rules += [{"type":"field","inboundTag":$t,"outboundTag":"blocked"}]' "$CFG" > /tmp/cas-svc.json && mv /tmp/cas-svc.json "$CFG"
+    local act="DIMATIKAN"
+  fi
+  if xray run -test -config "$CFG" >/dev/null 2>&1; then
+    systemctl restart xray
+    msg "${G}Layanan $UP $act.${N}"
+  else
+    cp -f "${CFG}.svcbak" "$CFG"
+    msg "${R}Config error, dikembalikan ke semula. Tidak ada perubahan.${N}"
+  fi
+}
+
 while true; do
   header "$UP"
   echo -e "\n ${C}1.)${N}  Create"
@@ -900,11 +938,12 @@ while true; do
   echo -e " ${C}14.)${N} Edit Limit IP All"
   echo -e " ${C}15.)${N} Edit Limit Bandwidth"
   echo -e " ${C}16.)${N} Edit Limit All Bandwidth"
-  echo -e " ${C}17.)${N} Back to Menu"
+  echo -e " ${C}17.)${N} ON/OFF Layanan $UP $(svc_state_lbl)"
+  echo -e " ${C}18.)${N} Back to Menu"
   echo -e " ${C}x.)${N}  Exit"
   echo -e "$LINE\n"
   trap 'echo; exit 0' INT     # Ctrl-C di menu ini = kembali ke menu sebelumnya
-  read -rp "$(echo -e "${G}Select From Options [1-17 or x] : ${N}")" opt
+  read -rp "$(echo -e "${G}Select From Options [1-18 or x] : ${N}")" opt
   trap ':' INT
   case $opt in
     1) cas_run "create 0" ;;
@@ -923,7 +962,8 @@ while true; do
     14) cas_run "edit_field 4 1" ;;
     15) cas_run "edit_field 5 0" ;;
     16) cas_run "edit_field 5 1" ;;
-    17) exit 0 ;;
+    17) cas_run "toggle_svc" ;;
+    18) exit 0 ;;
     x|X) clear; kill -TERM $PPID 2>/dev/null; exit 0 ;;
     *) msg "${R}Pilihan salah${N}" ;;
   esac
@@ -2110,6 +2150,13 @@ server {
 
     # Halaman cek akun pelanggan (read-only, service lokal 8099)
     location ^~ /cek {
+        proxy_pass http://127.0.0.1:8099;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 20s;
+    }
+    # Subscription per akun (/sub/<uuid> -> base64 gabungan config), service 8099
+    location ^~ /sub {
         proxy_pass http://127.0.0.1:8099;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

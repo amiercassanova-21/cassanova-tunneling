@@ -1,3 +1,23 @@
+v1.48.8
+ITEM 2 (FITUR LIVE): ON/OFF PROTOKOL, RESPONSE WS, SUBSCRIPTION
+[#4] ON/OFF layanan per-protokol (menu VLESS/VMESS/TROJAN -> "ON/OFF Layanan"):
+  - Mematikan = blok semua inbound protokol itu via routing rule (outbound
+    "blocked"); inbound & client TIDAK dihapus -> reversible, aman.
+  - Label status [ON]/[OFF] tampil langsung di menu. Perubahan diuji
+    (xray run -test) lalu restart xray; kalau config error otomatis dibalik.
+[#6] Change Response WS (menu SSH -> "Change Response WS"):
+  - Ganti baris respons handshake ws-ssh: Default (101 Switching Protocols) /
+    200 OK / Custom (ketik sendiri). Tersimpan di /etc/autoscript/ws_response,
+    dibaca ws-ssh saat start, lalu service direstart. HANYA untuk SSH-WS
+    (WS Xray diurus Nginx/Xray, tidak terpengaruh).
+[#11] Subscription link per akun:
+  - Tiap detail akun xray kini menampilkan "SUBSCRIPTION" = https://DOMAIN/sub/<uuid>
+    (1 link berisi VLESS+VMESS+TROJAN+HY2 milik akun itu, base64 standar).
+  - Dilayani service lokal :8099 (route /sub) + location Nginx baru; token = UUID
+    akun. DRY: link dirakit ulang dari generator yang sudah ada.
+CATATAN: ketiganya menyentuh layanan live -> WAJIB diuji di Test SC dulu
+sebelum ke VPS produksi.
+
 v1.48.7
 OUTPUT AKUN SSH & HY2 JUGA GAYA POTATO (seragam dgn xray)
 - Notif bot SSH: kotak judul "SSH" di tengah -> info box -> kotak <code>

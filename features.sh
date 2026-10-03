@@ -1184,7 +1184,7 @@ cat > /usr/local/sbin/cekakun.py <<'CEKAKUNPY_EOF'
 #!/usr/bin/env python3
 # Cassanova Tunneling - Halaman Cek Akun Pelanggan (read-only)
 # Kunci cek: UUID/password (Xray) atau username (SSH). Tidak pernah menulis data.
-import json, os, re, time, html
+import json, os, re, time, html, base64, subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 from collections import defaultdict
@@ -1288,6 +1288,58 @@ def build(acc):
         out["quota_pct"] = pct
     return out
 
+# ---- Subscription link per akun: /sub/<uuid> -> base64 gabungan semua URI ----
+# Token = UUID akun (kolom ke-3 db xray, atau kolom ke-2 db/all.db). Dari UUID
+# dicari username-nya, lalu dikumpulkan URI tiap protokol yang dimiliki user itu
+# (VLESS/VMESS/TROJAN via "m-xray --show", HY2 via "m-hy2 --link"). DRY: pakai
+# generator link yang sudah ada, tidak menduplikasi logika.
+def _username_for(token):
+    token = (token or "").strip()
+    for p in PROTOS:
+        try:
+            with open(f"{ASD}/db/{p}.db") as f:
+                for line in f:
+                    c = line.split()
+                    if len(c) >= 6 and c[2] == token:
+                        return c[0]
+        except FileNotFoundError:
+            continue
+    try:
+        with open(f"{ASD}/db/all.db") as f:
+            for line in f:
+                c = line.split()
+                if len(c) >= 2 and c[1] == token:
+                    return c[0]
+    except FileNotFoundError:
+        pass
+    return None
+
+def build_sub(token):
+    user = _username_for(token)
+    if not user or not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", user):
+        return None
+    uris = []
+    for p in PROTOS:
+        try:
+            out = subprocess.run(["/usr/local/sbin/m-xray", p, "--show", user],
+                                 capture_output=True, text=True, timeout=10).stdout
+        except Exception:
+            out = ""
+        for line in out.splitlines():
+            parts = line.split("|")
+            if len(parts) >= 3 and parts[0] == "LINK" and parts[2].strip():
+                uris.append(parts[2].strip())
+    try:
+        hy = subprocess.run(["/usr/local/sbin/m-hy2", "--link", user],
+                            capture_output=True, text=True, timeout=10).stdout.strip()
+        if hy.startswith("hysteria2://"):
+            uris.append(hy)
+    except Exception:
+        pass
+    if not uris:
+        return None
+    return "\n".join(uris) + "\n"
+
 PAGE = """<!DOCTYPE html><html lang="id"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cek Akun - __BRAND__</title>
@@ -1385,6 +1437,17 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         path = u.path.rstrip("/")
+        # Subscription per akun: /sub/<uuid> -> base64 gabungan URI semua protokol
+        m = re.search(r"/sub/([A-Za-z0-9._@:+-]{6,80})$", path)
+        if m:
+            ip = self.headers.get("X-Real-IP") or self.client_address[0]
+            if not rate_ok(ip):
+                return self._send(429, "rate limit, tunggu 1 menit", "text/plain; charset=utf-8")
+            data = build_sub(m.group(1))
+            if not data:
+                return self._send(404, "not found", "text/plain; charset=utf-8")
+            return self._send(200, base64.b64encode(data.encode()).decode(),
+                              "text/plain; charset=utf-8")
         if path.endswith("/api"):
             ip = self.headers.get("X-Real-IP") or self.client_address[0]
             if not rate_ok(ip):
