@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.1"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.2"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -50,6 +50,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+
 type cas_notify &>/dev/null || cas_notify(){ :; }
 type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
 type cas_notify_quote &>/dev/null || cas_notify_quote(){ :; }
+type cas_notify_plain &>/dev/null || cas_notify_plain(){ :; }
 R='\e[31m'; G='\e[32m'; Y='\e[33m'; B='\e[34m'; C='\e[36m'; P='\e[35m'; W='\e[1;97m'; O='\e[38;5;208m'; N='\e[0m'
 BGB='\e[44m'; BG='\e[41m'
 UBG='\e[48;5;93m'; UFR='\e[38;5;141m'   # ungu: latar banner & bingkai (identitas Cassanova)
@@ -424,16 +425,16 @@ Limit IP      : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl
 Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
 Expired On    : $exp"
     # tiap bagian dibungkus kotak sendiri supaya di Telegram bisa disalin satu per satu
-    blk(){ printf '%s\n%s\n<code>%s</code>' "$BR" "$1" "$2"; }
+    blk(){ printf '──────── %s ────────\n<code>%s</code>' "$1" "$2"; }
     local xbl=""
-    (( xhon )) && xbl=$'\n'"$(blk "🚀 <b>$UP XHTTP TLS</b>" "$(mk_link xh 1)")"
+    (( xhon )) && xbl=$'\n'"$(blk "<b>$UP XHTTP TLS</b>" "$(mk_link xh 1)")"
     local body="📋 <b>RINCIAN AKUN</b>
 <pre>$info</pre>
-$(blk "🔐 <b>$UP WS TLS</b>"          "$(mk_link ws 1)")
-$(blk "🔓 <b>$UP WS NON-TLS</b>"      "$(mk_link ws 0)")
-$(blk "⚡ <b>$UP GRPC</b>"                "$(mk_link grpc 1)")
-$(blk "🆙 <b>$UP UPGRADE TLS</b>"     "$(mk_link up 1)")
-$(blk "🆙 <b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$xbl
+$(blk "<b>$UP WS TLS</b>"          "$(mk_link ws 1)")
+$(blk "<b>$UP WS NON-TLS</b>"      "$(mk_link ws 0)")
+$(blk "<b>$UP GRPC</b>"            "$(mk_link grpc 1)")
+$(blk "<b>$UP UPGRADE TLS</b>"     "$(mk_link up 1)")
+$(blk "<b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$xbl
 $BR
 🔁 <b>CONVERT LINK</b>
 Sing-box   : <code>https://singbox.cassanova.my.id/</code>
@@ -531,12 +532,13 @@ list_users(){ # $1 = all | active | inactive
   header "$title"
   printf " ${G}%-3s %-12s %-10s %-3s %-12s %s${N}\n" "NO" "USER" "EXPIRED" "IP" "USED/QUOTA" "ST"
   local i=0 u exp id ipl q st qd
+  LISTU=()   # daftar user SESUAI yang ditampilkan -> dipakai pick_user agar nomor cocok
   while read -r u exp id ipl q st; do
     [[ -z "$u" ]] && continue
     is_all "$u" && continue
     [[ $f == active && "$st" != active ]] && continue
     [[ $f == inactive && "$st" == active ]] && continue
-    i=$((i+1))
+    i=$((i+1)); LISTU+=("$u")
     [[ "$q" == 0 ]] && qd="$(hbytes $(usage_get $PROTO "$u"))/~" || qd="$(hbytes $(usage_get $PROTO "$u"))/${q}G"
     printf " %-3s %-12s %-10s %-3s %-12s %b\n" "$i" "$u" "$exp" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")" "$qd" "$(st_label "$st")"
   done < "$DB"
@@ -570,7 +572,7 @@ pick_user(){ # $1 = all | active | inactive ; hasil di variabel U
   [[ $LISTED == 0 ]] && { pause; return 1; }
   read -rp "Nomor / Username : " inp
   if [[ "$inp" =~ ^[0-9]+$ ]]; then
-    U=$(awk -v n="$inp" -v f="$f" 'NF{ if(f=="active" && $6!="active") next; if(f=="inactive" && $6=="active") next; i++; if(i==n){print $1; exit} }' "$DB")
+    U="${LISTU[$((inp-1))]}"   # ambil dari daftar yang ditampilkan (sudah tanpa akun all-protocol)
   else
     U=$inp
   fi
@@ -617,7 +619,7 @@ delete(){
   else pick_user || return; confirm_pick || return; fi
   local dexp=$(db_field $PROTO "$U" 2)
   lock_db; remove_account $PROTO "$U"; unlock_db
-  cas_notify_raw "<blockquote><b>Hapus User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Hapus User</b></blockquote>
 $DOMAIN
 <pre>User   : $U
 Type   : $PROTO
@@ -641,7 +643,7 @@ renew(){
   st=$(db_field $PROTO "$U" 6)
   if [[ "$st" == "quota" ]]; then xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"; db_set $PROTO "$U" 6 active; fi
   unlock_db
-  cas_notify_raw "<blockquote><b>Renew / Extend User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Renew / Extend User</b></blockquote>
 $DOMAIN
 <pre>User       : $U
 Added      : $d Days

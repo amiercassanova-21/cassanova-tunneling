@@ -43,14 +43,15 @@ _cas_foot(){
 # isinya tetap sampai. Dulu respons API dibuang ke /dev/null, jadi notif yang
 # gagal kirim hilang diam-diam tanpa pernah ketahuan.
 _cas_send(){
-  local BOT_TOKEN CHAT_ID NOTIFY
+  local BOT_TOKEN CHAT_ID NOTIFY foot
   [[ -f /etc/autoscript/bot ]] || return 0
   . /etc/autoscript/bot
   [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" || "$NOTIFY" != "on" ]] && return 0
+  foot=$'\n'"$(_cas_foot)"; [[ "$2" == nofoot ]] && foot=""
   (
     r=$(curl -s --max-time 15 \
       --data-urlencode "chat_id=$CHAT_ID" \
-      --data-urlencode "text=$1"$'\n'"$(_cas_foot)" \
+      --data-urlencode "text=$1$foot" \
       --data-urlencode "parse_mode=HTML" \
       --data-urlencode "disable_web_page_preview=true" \
       "https://api.telegram.org/bot$BOT_TOKEN/sendMessage")
@@ -76,6 +77,9 @@ _cas_card(){ printf '%s\n%s' "<b>$1</b>" "$2"; }
 cas_notify(){ _cas_send "$(_cas_card "$1" "$2")"; }
 cas_notify_quote(){ _cas_send "$(_cas_card "$1" "$2")"; }
 cas_notify_raw(){ _cas_send "$1"; }
+# cas_notify_plain "teks" -> kirim apa adanya TANPA baris kaki (domain·jam),
+# dipakai notif yang domainnya sudah ditaruh di atas (renew/hapus) agar tidak dobel.
+cas_notify_plain(){ _cas_send "$1" nofoot; }
 EOF
 
 

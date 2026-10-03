@@ -241,6 +241,7 @@ cat > /usr/local/sbin/m-ssh <<'EOF'
 type cas_notify &>/dev/null || cas_notify(){ :; }
 type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
 type cas_notify_quote &>/dev/null || cas_notify_quote(){ :; }
+type cas_notify_plain &>/dev/null || cas_notify_plain(){ :; }
 DB=$ASD/db/ssh.db
 TRASH=$ASD/db/ssh.trash
 DOMAIN=$(cat $ASD/domain)
@@ -331,12 +332,13 @@ list_users(){ # $1 = all | active | inactive
   header "$title"
   printf " ${G}%-3s %-14s %-10s %-3s %-6s${N}\n" "NO" "USER" "EXPIRED" "IP" "ST"
   local i=0 u exp ipl st lab
+  LISTU=()   # daftar user SESUAI yang ditampilkan -> dipakai pick_user agar nomor cocok
   while read -r u exp ipl st; do
     [[ -z "$u" ]] && continue
     is_all "$u" && continue
     [[ $f == active && "$st" != active ]] && continue
     [[ $f == inactive && "$st" == active ]] && continue
-    i=$((i+1))
+    i=$((i+1)); LISTU+=("$u")
     case $st in active) lab="${G}ON${N}";; locked) lab="${R}LOCK${N}";; banned:*) lab="${Y}BAN${N}";; *) lab="$st";; esac
     printf " %-3s %-14s %-10s %-3s %b\n" "$i" "$u" "$exp" "$([[ "$ipl" == 0 ]] && echo - || echo "$ipl")" "$lab"
   done < "$DB"
@@ -368,7 +370,7 @@ pick_user(){ # $1 = all | active | inactive
   [[ $LISTED == 0 ]] && { pause; return 1; }
   read -rp "Nomor / Username : " inp
   if [[ "$inp" =~ ^[0-9]+$ ]]; then
-    U=$(awk -v n="$inp" -v f="$f" 'NF{ if(f=="active" && $4!="active") next; if(f=="inactive" && $4=="active") next; i++; if(i==n){print $1; exit} }' "$DB")
+    U="${LISTU[$((inp-1))]}"   # ambil dari daftar yang ditampilkan (sudah tanpa akun all-protocol)
   else
     U=$inp
   fi
@@ -406,7 +408,7 @@ trial(){
 }
 
 delete(){ pick_user || return; confirm_pick || return; local dexp=$(sf "$U" 2); lock_db; ssh_remove "$U"; unlock_db
-  cas_notify_raw "<blockquote><b>Hapus User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Hapus User</b></blockquote>
 $DOMAIN
 <pre>User   : $U
 Type   : ssh
@@ -424,7 +426,7 @@ renew(){
   usermod -U "$U" 2>/dev/null; [[ "$(sf "$U" 4)" != active ]] && sset "$U" 4 active
   rm -f $ASD/usage/ssh/$U   # reset kuota agar terbaca dari nol
   unlock_db
-  cas_notify_raw "<blockquote><b>Renew / Extend User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Renew / Extend User</b></blockquote>
 $DOMAIN
 <pre>User       : $U
 Added      : $d Days

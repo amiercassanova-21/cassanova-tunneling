@@ -1,3 +1,17 @@
+v1.48.2
+PERBAIKAN BUG PENTING + RINCIAN AKUN GAYA POTATO
+- BUG KRITIS pilih akun: nomor saat pilih (renew/hapus/dll) kini SELALU cocok
+  dengan nomor yang ditampilkan. Sebelumnya akun all-protocol yang disembunyikan
+  dari daftar tetap ikut terhitung saat memilih nomor -> bisa salah akun
+  (mis. pilih "2" malah kena akun lain). Diperbaiki di VLESS/VMESS/TROJAN & SSH.
+- Akun all-protocol: tampilan daftar & pilihan kini konsisten (keduanya memakai
+  daftar yang sama), jadi akun all-protocol tidak muncul di menu vless/vmess/dll.
+- Notif Renew & Hapus: domain tidak lagi dobel (hanya tampil di atas). Footer
+  domain dihilangkan khusus notif yang domainnya sudah di atas (cas_notify_plain).
+- Rincian akun di bot (VLESS/VMESS/TROJAN): bagian link diubah ke gaya Potato
+  "──── JUDUL ────" (tanpa emoji), kotak <pre> + salin per-link tetap. Recovery
+  ikut otomatis (memakai fungsi yang sama).
+
 v1.48.1
 PERBAIKAN: SEMUA JUDUL MENU/SUBMENU DIPASTIKAN BANNER UNGU
 - header()/bar() UNGU kini didefinisikan global di lib.sh, jadi SEMUA script

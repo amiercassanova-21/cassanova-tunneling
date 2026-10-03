@@ -132,6 +132,7 @@ cat > /usr/local/sbin/m-hy2 <<'EOF'
 [[ -f /usr/local/lib/autoscript/notify.sh ]] && . /usr/local/lib/autoscript/notify.sh
 type cas_notify &>/dev/null || cas_notify(){ :; }
 type cas_notify_raw &>/dev/null || cas_notify_raw(){ :; }
+type cas_notify_plain &>/dev/null || cas_notify_plain(){ :; }
 DB=$ASD/db/hy2.db
 TRASH=$ASD/db/hy2.trash
 DOMAIN=$(cat $ASD/domain 2>/dev/null | tr -d '[:space:]')
@@ -288,7 +289,7 @@ renew(){
   exp=$(date -d "$cur +$d days" +%F)
   lock_db; hset "$U" 2 "$exp"; hset "$U" 6 active; unlock_db
   msg "${G}$U diperpanjang s.d. $exp${N}"
-  cas_notify_raw "<blockquote><b>Renew / Extend User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Renew / Extend User</b></blockquote>
 $DOMAIN
 <pre>User       : $U
 Added      : $d Days
@@ -303,7 +304,7 @@ delete(){
   local dexp; dexp=$(hf "$U" 2)
   lock_db; hy_remove "$U"; unlock_db
   msg "${G}$U dihapus${N}"
-  cas_notify_raw "<blockquote><b>Hapus User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Hapus User</b></blockquote>
 $DOMAIN
 <pre>User   : $U
 Type   : hysteria2
