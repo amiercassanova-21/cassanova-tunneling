@@ -6,7 +6,7 @@
 #  - Limit IP (auto banned), Limit Bandwidth (kuota)
 #  - Set Reduce/Time (durasi banned)
 # =====================================================
-SCVER="v1.48.2"   # diisi otomatis dari file 'version' saat rilis
+SCVER="v1.48.4"   # diisi otomatis dari file 'version' saat rilis
 GRN='\e[32m'; RED='\e[31m'; YEL='\e[33m'; NC='\e[0m'
 [[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan sebagai root!${NC}" && exit 1
 [[ ! -f /etc/autoscript/domain ]] && echo -e "${RED}Script belum terinstall. Jalankan install.sh dulu.${NC}" && exit 1
@@ -425,16 +425,22 @@ Limit IP      : $([[ "$ipl" == 0 || -z "$ipl" ]] && echo Unlimited || echo "$ipl
 Kuota         : $([[ "$q" == 0 || -z "$q" ]] && echo Unlimited || echo "$q GB")
 Expired On    : $exp"
     # tiap bagian dibungkus kotak sendiri supaya di Telegram bisa disalin satu per satu
-    blk(){ printf '──────── %s ────────\n<code>%s</code>' "$1" "$2"; }
+    # Gaya Potato: judul+garis di LUAR kotak (pemisah), tiap data (detail & tiap
+    # link) di kotak <pre> sendiri -> bisa tap-salin per-kotak.
+    ctr(){ local t="$1" w=32 p; p=$(( (w-${#t})/2 )); ((p<0))&&p=0; printf "%*s%s" $p "" "$t"; }
+    blk(){ printf '%s\n%s\n%s\n<pre>%s</pre>' "$BR" "$(ctr "$1")" "$BR" "$2"; }
     local xbl=""
-    (( xhon )) && xbl=$'\n'"$(blk "<b>$UP XHTTP TLS</b>" "$(mk_link xh 1)")"
-    local body="📋 <b>RINCIAN AKUN</b>
+    (( xhon )) && xbl=$'\n'"$(blk "$UP XHTTP TLS" "$(mk_link xh 1)")"
+    local body="$BR
+$(ctr "$UP")
+$BR
 <pre>$info</pre>
-$(blk "<b>$UP WS TLS</b>"          "$(mk_link ws 1)")
-$(blk "<b>$UP WS NON-TLS</b>"      "$(mk_link ws 0)")
-$(blk "<b>$UP GRPC</b>"            "$(mk_link grpc 1)")
-$(blk "<b>$UP UPGRADE TLS</b>"     "$(mk_link up 1)")
-$(blk "<b>$UP UPGRADE NON-TLS</b>" "$(mk_link up 0)")$xbl
+$(blk "$UP WS TLS"          "$(mk_link ws 1)")
+$(blk "$UP WS NON-TLS"      "$(mk_link ws 0)")
+$(blk "$UP GRPC"            "$(mk_link grpc 1)")
+$(blk "$UP UPGRADE TLS"     "$(mk_link up 1)")
+$(blk "$UP UPGRADE NON-TLS" "$(mk_link up 0)")$xbl
+
 $BR
 🔁 <b>CONVERT LINK</b>
 Sing-box   : <code>https://singbox.cassanova.my.id/</code>
@@ -512,7 +518,7 @@ check_config(){
   id=$(db_field $PROTO "$U" 3); exp=$(db_field $PROTO "$U" 2)
   st=$(db_field $PROTO "$U" 6); q=$(db_field $PROTO "$U" 5)
   used=$(usage_get $PROTO "$U")
-  show_account "$U" "$id" "$exp"
+  show_account "$U" "$id" "$exp" notif "$UP Detail Akun"
   # ringkasan status & pemakaian di bawah akun (show_account tidak menghitung terpakai)
   printf " ${G}%-13s${N}: %b\n" "Status" "$(st_label "$st")"
   if [[ "$q" == 0 || -z "$q" ]]; then
@@ -643,7 +649,7 @@ renew(){
   st=$(db_field $PROTO "$U" 6)
   if [[ "$st" == "quota" ]]; then xray_add $PROTO "$U" "$(db_field $PROTO "$U" 3)"; db_set $PROTO "$U" 6 active; fi
   unlock_db
-  cas_notify_plain "<blockquote><b>Renew / Extend User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Renew/Extend User</b></blockquote>
 $DOMAIN
 <pre>User       : $U
 Added      : $d Days
@@ -1127,9 +1133,7 @@ set_bantime(){
          if [[ "$m" =~ ^[0-9]+$ ]] && (( m > 0 )); then echo "$m" > $ASD/bantime; echo -e "${G}Tersimpan${N}"; else echo -e "${R}Harus angka > 0${N}"; fi
          sleep 1 ;;
       2) clear
-         echo -e "${B}════════════════════════════════════${N}"
-         echo -e "${P}        SENSITIVITAS LOCK IP        ${N}"
-         echo -e "${B}════════════════════════════════════${N}\n"
+         bar "SENSITIVITAS LOCK IP"; echo
          echo -e " IP operator seluler sering berganti sendiri,"
          echo -e " sehingga 1 perangkat bisa terbaca 2 IP sesaat."
          echo -e " Akun baru dikunci bila pelanggaran menetap.\n"

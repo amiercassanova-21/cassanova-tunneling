@@ -1,3 +1,20 @@
+v1.48.4
+OUTPUT AKUN BOT GAYA POTATO (tiap kotak bisa tap-salin)
+- Rincian akun di bot (VLESS/VMESS/TROJAN + Recovery): header ━ VLESS ━, detail
+  dalam 1 kotak <pre>, dan TIAP LINK dalam kotak <pre> sendiri (tap = salin kotak
+  itu saja). Judul & garis pemisah di luar kotak (gaya Potato). 1 baris jeda
+  sebelum CONVERT LINK. Convert link tetap <code> (1x klik salin).
+- Check Config: kini mengeluarkan detail akun LENGKAP seperti create (dikirim ke bot).
+- Notif Renew: label dirapikan jadi "Renew/Extend User" (persis Potato).
+
+v1.48.3
+LAYAR updatesc & cas-update IKUT UNGU
+- Judul "UPDATE CASSANOVA TUNNELING" (saat ketik updatesc) & menu "AUTO UPDATE"
+  kini banner UNGU (dulu masih pink/cyan karena cas-update punya warna sendiri &
+  memuat lib.sh belakangan).
+- Panel progress update (bar) ikut warna ungu.
+- Label kecil "SENSITIVITAS LOCK IP" & "CHANGELOG" ikut ungu.
+
 v1.48.2
 PERBAIKAN BUG PENTING + RINCIAN AKUN GAYA POTATO
 - BUG KRITIS pilih akun: nomor saat pilih (renew/hapus/dll) kini SELALU cocok

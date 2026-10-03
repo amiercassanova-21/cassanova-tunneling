@@ -289,7 +289,7 @@ renew(){
   exp=$(date -d "$cur +$d days" +%F)
   lock_db; hset "$U" 2 "$exp"; hset "$U" 6 active; unlock_db
   msg "${G}$U diperpanjang s.d. $exp${N}"
-  cas_notify_plain "<blockquote><b>Renew / Extend User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Renew/Extend User</b></blockquote>
 $DOMAIN
 <pre>User       : $U
 Added      : $d Days

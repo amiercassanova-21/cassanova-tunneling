@@ -426,7 +426,7 @@ renew(){
   usermod -U "$U" 2>/dev/null; [[ "$(sf "$U" 4)" != active ]] && sset "$U" 4 active
   rm -f $ASD/usage/ssh/$U   # reset kuota agar terbaca dari nol
   unlock_db
-  cas_notify_plain "<blockquote><b>Renew / Extend User</b></blockquote>
+  cas_notify_plain "<blockquote><b>Renew/Extend User</b></blockquote>
 $DOMAIN
 <pre>User       : $U
 Added      : $d Days

@@ -38,7 +38,7 @@ BRANCH=$(cat $ASD/channel 2>/dev/null); BRANCH=${BRANCH:-main}
 # Ambil file lewat Worker (repo private + watermark). Channel dikirim via ?ref=.
 BASE="$(cat $ASD/license_url 2>/dev/null)/raw"
 LOG=/var/log/cas-update.log
-G='\e[32m'; R='\e[31m'; Y='\e[33m'; C='\e[36m'; P='\e[35m'; N='\e[0m'
+G='\e[32m'; R='\e[31m'; Y='\e[33m'; C='\e[36m'; P='\e[35m'; N='\e[0m'; W='\e[1;97m'; UBG='\e[48;5;93m'; UFR='\e[38;5;141m'
 AUTO=$(cat $ASD/autoupdate 2>/dev/null); AUTO=${AUTO:-off}
 cur=$(cat $ASD/version 2>/dev/null)
 
@@ -81,7 +81,7 @@ cas_progress(){ # arg1 = versi asal, arg2 = versi tujuan  (Gaya B: panel berbing
     }
     BEGIN{
       W=45
-      BC="\033[35m"; CY="\033[36m"; DIM="\033[38;5;240m"; Yc="\033[33m"; GR="\033[32m"; Wc="\033[1;97m"; NC="\033[0m"
+      BC="\033[38;5;141m"; CY="\033[38;5;135m"; DIM="\033[38;5;240m"; Yc="\033[33m"; GR="\033[32m"; Wc="\033[1;97m"; NC="\033[0m"
       split("\342\240\213|\342\240\231|\342\240\271|\342\240\270|\342\240\274|\342\240\264|\342\240\246|\342\240\247|\342\240\207|\342\240\217", fr, "|")
       split("\342\226\217|\342\226\216|\342\226\215|\342\226\214|\342\226\213|\342\226\212|\342\226\211|\342\226\210", blk, "|")
       spin=0; pct=0; drawn=0; broke=0
@@ -166,9 +166,10 @@ do_update(){ # $1 = auto(1/0) ; return 0 sukses
 if [[ "$1" == "--quick" ]]; then
   latest=$(fetch_latest); [[ -n "$latest" ]] && echo "$latest" > $ASD/latest
   clear
-  echo -e "${C}════════════════════════════════════${N}"
-  echo -e "        ${P}UPDATE CASSANOVA TUNNELING${N}"
-  echo -e "${C}════════════════════════════════════${N}"
+  _t="UPDATE CASSANOVA TUNNELING"; _w=46; _p=$(( (_w-${#_t})/2 )); _r=$(( _w-${#_t}-_p )); _d=$(printf '═%.0s' $(seq $_w))
+  echo -e "${UFR}╔${_d}╗${N}"
+  printf  "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $_p "" "$_t" $_r ""
+  echo -e "${UFR}╚${_d}╝${N}"
   echo -e " Versi terpasang : ${Y}$cur${N}"
   echo -e " Versi terbaru   : $([[ -z "$latest" ]] && echo -e "${R}gagal dicek${N}" || echo -e "${G}$latest${N}")"
   echo -e "${C}════════════════════════════════════${N}"
@@ -212,9 +213,10 @@ fi
 while true; do
   AUTO=$(cat $ASD/autoupdate 2>/dev/null); AUTO=${AUTO:-off}; cur=$(cat $ASD/version 2>/dev/null)
   clear
-  echo -e "${C}════════════════════════════════════${N}"
-  echo -e "           ${P}AUTO UPDATE${N}"
-  echo -e "${C}════════════════════════════════════${N}"
+  _t="AUTO UPDATE"; _w=46; _p=$(( (_w-${#_t})/2 )); _r=$(( _w-${#_t}-_p )); _d=$(printf '═%.0s' $(seq $_w))
+  echo -e "${UFR}╔${_d}╗${N}"
+  printf  "${UFR}║${UBG}${W}%*s%s%*s${N}${UFR}║${N}\n" $_p "" "$_t" $_r ""
+  echo -e "${UFR}╚${_d}╝${N}"
   latest=$(fetch_latest); [[ -n "$latest" ]] && echo "$latest" > $ASD/latest
   echo -e " Versi terpasang : ${Y}$cur${N}"
   echo -e " Versi terbaru   : $([[ -z "$latest" ]] && echo -e "${R}gagal dicek${N}" || echo -e "${G}$latest${N}")"
@@ -243,7 +245,7 @@ while true; do
          echo -e " restart ditunda ke jam 04:00. Gagal update = otomatis rollback.\n"
          read -rp "Aktifkan auto update? (y/n) : " y; [[ "$y" == y ]] && echo on > $ASD/autoupdate
        fi ;;
-    3) clear; echo -e "${P}CHANGELOG${N}\n"; fetch_changelog; echo; read -rp "Tekan Enter..." ;;
+    3) clear; echo -e "${UBG}${W} CHANGELOG ${N}\n"; fetch_changelog; echo; read -rp "Tekan Enter..." ;;
     4|x|X) exit 0 ;;
   esac
 done
